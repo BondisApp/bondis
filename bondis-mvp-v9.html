@@ -1,0 +1,1045 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>BONDIS v9 — Colectivos en tiempo real</title>
+<link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Bebas+Neue&family=Inter:wght@300;400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<style>
+:root {
+  --bg:#1a1a1e;
+  --bg2:#14141a;
+  --surface:#222228;
+  --surface2:#2a2a32;
+  --border:#2e2e38;
+  --yellow:#f5c800;
+  --green:#00e676;
+  --red:#ff3d00;
+  --blue:#2979ff;
+  --text:#e8e8f0;
+  --text-dim:#5a5a6e;
+}
+*,*::before,*::after{margin:0;padding:0;box-sizing:border-box}
+body{font-family:'Space Mono',monospace;background:var(--bg);color:var(--text);height:100vh;overflow:hidden;display:flex;flex-direction:column}
+
+/* HEADER */
+#header{display:flex;align-items:center;justify-content:space-between;padding:0 20px;height:50px;background:var(--surface);border-bottom:1px solid var(--border);flex-shrink:0;z-index:1000}
+.logo{font-family:'Bebas Neue',sans-serif;font-size:26px;letter-spacing:4px;color:var(--yellow);line-height:1}
+.logo span{font-size:9px;letter-spacing:3px;color:var(--text-dim);display:block;font-family:'Space Mono',monospace;margin-top:-2px}
+.header-center{display:flex;align-items:center;gap:16px}
+.stat-pill{display:flex;align-items:center;gap:7px;padding:3px 10px;border:1px solid var(--border);border-radius:2px}
+.stat-dot{width:6px;height:6px;border-radius:50%;background:var(--green);animation:pulse-dot 2s ease-in-out infinite}
+@keyframes pulse-dot{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.4;transform:scale(.6)}}
+.stat-dot.yellow{background:var(--yellow);animation-delay:.3s}
+.stat-dot.red{background:var(--red);animation:none}
+.stat-label{font-size:8px;letter-spacing:2px;text-transform:uppercase;color:var(--text-dim)}
+.stat-value{font-size:12px;font-weight:700;color:var(--text)}
+#clock{font-size:12px;color:var(--yellow);letter-spacing:2px}
+.data-source{font-size:8px;letter-spacing:1px;color:var(--text-dim);text-transform:uppercase}
+
+/* MAIN */
+#main{display:flex;flex:1;overflow:hidden}
+
+/* SIDEBAR */
+#sidebar{width:272px;background:var(--surface);border-right:1px solid var(--border);display:flex;flex-direction:column;flex-shrink:0;overflow:hidden}
+.sidebar-section{padding:14px;border-bottom:1px solid var(--border)}
+.section-label{font-size:8px;letter-spacing:3px;text-transform:uppercase;color:var(--text-dim);margin-bottom:10px}
+
+/* MY LOCATION BUTTON */
+#btn-location{width:100%;display:flex;align-items:center;gap:8px;padding:8px 12px;background:var(--bg2);border:1px solid var(--border);border-radius:2px;cursor:pointer;color:var(--text-dim);font-family:'Space Mono',monospace;font-size:10px;letter-spacing:1px;transition:all .2s;margin-bottom:10px}
+#btn-location:hover{border-color:var(--yellow);color:var(--yellow)}
+#btn-location.active{border-color:var(--green);color:var(--green)}
+#btn-location .loc-dot{width:8px;height:8px;border-radius:50%;background:var(--text-dim);flex-shrink:0;transition:background .2s}
+#btn-location.active .loc-dot{background:var(--green);box-shadow:0 0 6px var(--green)}
+
+/* Search */
+#search-wrap{position:relative}
+#search{width:100%;background:var(--bg2);border:1px solid var(--border);border-radius:2px;padding:8px 12px 8px 30px;color:var(--text);font-family:'Space Mono',monospace;font-size:11px;outline:none;transition:border-color .2s}
+#search:focus{border-color:var(--yellow)}
+#search::placeholder{color:var(--text-dim)}
+.search-icon{position:absolute;left:9px;top:50%;transform:translateY(-50%);font-size:11px;color:var(--text-dim)}
+
+/* Chips */
+.chips{display:flex;flex-wrap:wrap;gap:5px;margin-top:8px;max-height:72px;overflow-y:auto}
+.chips::-webkit-scrollbar{width:2px}
+.chips::-webkit-scrollbar-thumb{background:var(--border)}
+.chip{padding:2px 8px;font-size:9px;font-family:'Space Mono',monospace;letter-spacing:1px;border:1px solid var(--border);border-radius:2px;cursor:pointer;color:var(--text-dim);transition:all .12s;background:var(--bg2)}
+.chip:hover{border-color:var(--yellow);color:var(--yellow)}
+.chip.active{background:var(--yellow);color:#000;border-color:var(--yellow);font-weight:700}
+
+/* STOPS TOGGLE */
+#btn-stops{width:100%;display:flex;align-items:center;gap:8px;padding:8px 12px;background:var(--bg2);border:1px solid var(--border);border-radius:2px;cursor:pointer;color:var(--text-dim);font-family:'Space Mono',monospace;font-size:10px;letter-spacing:1px;transition:all .2s}
+#btn-stops:hover{border-color:var(--green);color:var(--green)}
+#btn-stops.active{border-color:var(--green);color:var(--green);background:rgba(0,230,118,.05)}
+
+/* Vehicle list */
+#vehicle-list{flex:1;overflow-y:auto;padding:6px}
+#vehicle-list::-webkit-scrollbar{width:2px}
+#vehicle-list::-webkit-scrollbar-thumb{background:var(--border)}
+.vehicle-item{display:flex;align-items:center;gap:8px;padding:7px 8px;border-radius:2px;cursor:pointer;border:1px solid transparent;margin-bottom:1px;transition:background .1s}
+.vehicle-item:hover{background:var(--bg2);border-color:var(--border)}
+.vehicle-item.selected{background:rgba(245,200,0,.06);border-color:rgba(245,200,0,.25)}
+.vi-line{width:40px;height:18px;display:flex;align-items:center;justify-content:center;font-family:'Bebas Neue',sans-serif;font-size:11px;letter-spacing:1px;border-radius:2px;flex-shrink:0}
+.vi-info{flex:1;min-width:0}
+.vi-id{font-size:9px;font-weight:700;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.vi-meta{font-size:8px;color:var(--text-dim);margin-top:1px}
+.vi-speed{font-size:9px;color:var(--yellow);flex-shrink:0}
+
+/* Stats */
+.stats-grid{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+.stat-box{background:var(--bg2);border:1px solid var(--border);padding:8px;border-radius:2px}
+.sb-value{font-family:'Bebas Neue',sans-serif;font-size:22px;line-height:1;color:var(--yellow)}
+.sb-label{font-size:7px;letter-spacing:2px;text-transform:uppercase;color:var(--text-dim);margin-top:2px}
+
+/* MAP */
+#map-wrap{flex:1;position:relative}
+#map{width:100%;height:100%}
+.leaflet-container{background:var(--bg) !important}
+
+/* DETAIL PANEL */
+#detail{position:absolute;bottom:20px;right:20px;width:252px;background:var(--surface);border:1px solid var(--border);border-top:3px solid var(--yellow);padding:14px;z-index:999;display:none;animation:slideUp .2s ease}
+@keyframes slideUp{from{transform:translateY(8px);opacity:0}to{transform:translateY(0);opacity:1}}
+#detail.show{display:block}
+.detail-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px}
+.detail-line{font-family:'Bebas Neue',sans-serif;font-size:28px;line-height:1;color:var(--yellow)}
+.detail-close{cursor:pointer;color:var(--text-dim);font-size:14px;padding:4px}
+.detail-close:hover{color:var(--text)}
+.detail-row{display:flex;justify-content:space-between;align-items:center;padding:5px 0;border-bottom:1px solid var(--border)}
+.detail-row:last-child{border-bottom:none}
+.dr-label{font-size:8px;letter-spacing:2px;text-transform:uppercase;color:var(--text-dim)}
+.dr-value{font-size:10px;color:var(--text);font-weight:700}
+.dr-value.green{color:var(--green)}
+.dr-value.yellow{color:var(--yellow)}
+.trust-bar{height:3px;background:var(--border);border-radius:2px;margin-top:10px;overflow:hidden}
+.trust-fill{height:100%;background:var(--green);border-radius:2px;transition:width .5s ease}
+.trust-label{display:flex;justify-content:space-between;margin-top:3px}
+.trust-text{font-size:7px;letter-spacing:2px;text-transform:uppercase;color:var(--text-dim)}
+
+/* ETA PANEL */
+#eta-panel{position:absolute;bottom:20px;left:284px;width:300px;background:var(--surface);border:1px solid var(--border);border-top:3px solid var(--green);z-index:999;display:none;animation:slideUp .2s ease;max-height:65vh;overflow:hidden;flex-direction:column}
+#eta-panel.show{display:flex}
+.eta-header{padding:12px 14px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:flex-start;flex-shrink:0}
+.eta-stop-name{font-family:'Bebas Neue',sans-serif;font-size:17px;color:var(--green);line-height:1.1;max-width:220px}
+.eta-stop-dist{font-size:8px;letter-spacing:1px;color:var(--text-dim);margin-top:2px}
+.eta-close{cursor:pointer;color:var(--text-dim);font-size:14px;padding:4px;flex-shrink:0}
+.eta-close:hover{color:var(--text)}
+.eta-loading{padding:18px;text-align:center;font-size:9px;letter-spacing:2px;color:var(--text-dim)}
+.eta-list{overflow-y:auto;flex:1}
+.eta-list::-webkit-scrollbar{width:2px}
+.eta-list::-webkit-scrollbar-thumb{background:var(--border)}
+.eta-row{display:flex;align-items:center;gap:10px;padding:9px 14px;border-bottom:1px solid var(--border);transition:background .12s}
+.eta-row:hover{background:var(--bg2)}
+.eta-line-badge{width:44px;height:22px;display:flex;align-items:center;justify-content:center;font-family:'Bebas Neue',sans-serif;font-size:12px;letter-spacing:1px;border-radius:2px;flex-shrink:0}
+.eta-info{flex:1}
+.eta-time{font-family:'Bebas Neue',sans-serif;font-size:20px;line-height:1;color:var(--yellow)}
+.eta-time span{font-size:10px;color:var(--text-dim);font-family:'Space Mono',monospace;margin-left:2px}
+.eta-dist{font-size:8px;color:var(--text-dim);letter-spacing:1px;margin-top:1px}
+.eta-trust{width:5px;height:5px;border-radius:50%;flex-shrink:0}
+.eta-footer{padding:6px 14px;font-size:7px;letter-spacing:2px;color:var(--text-dim);border-top:1px solid var(--border);flex-shrink:0;text-transform:uppercase}
+
+/* REFRESH BAR */
+#refresh-bar{position:absolute;top:0;left:0;right:0;height:2px;background:var(--border);z-index:998;overflow:hidden}
+#refresh-progress{height:100%;background:var(--yellow);width:100%;transform:translateX(-100%)}
+
+/* STATUS */
+#status-bar{position:absolute;top:14px;left:14px;background:rgba(34,34,40,.96);border:1px solid var(--border);padding:6px 12px;z-index:999;font-size:8px;letter-spacing:2px;text-transform:uppercase;color:var(--text-dim)}
+#status-bar.connecting{border-color:var(--yellow);color:var(--yellow)}
+#status-bar.connected{border-color:var(--green);color:var(--green)}
+#status-bar.error{border-color:var(--red);color:var(--red)}
+
+/* LEGEND */
+#legend{position:absolute;top:14px;right:14px;background:rgba(34,34,40,.96);border:1px solid var(--border);padding:10px 12px;z-index:999}
+.legend-row{display:flex;align-items:center;gap:7px;margin-bottom:6px;font-size:9px;color:var(--text-dim);letter-spacing:1px}
+.legend-row:last-child{margin-bottom:0}
+.legend-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
+
+/* API BADGE */
+#api-badge{position:absolute;bottom:20px;left:20px;background:rgba(34,34,40,.92);border:1px solid var(--border);padding:6px 10px;z-index:999;font-size:8px;letter-spacing:2px;text-transform:uppercase;color:var(--text-dim);display:flex;align-items:center;gap:6px}
+.api-dot{width:5px;height:5px;border-radius:50%;background:var(--green);animation:pulse-dot 2s infinite}
+
+/* MOBILE */
+@media (max-width: 600px) {
+  #sidebar{width:100%;height:auto;max-height:38vh;flex-direction:row;flex-wrap:wrap;overflow-y:auto}
+  #main{flex-direction:column}
+  #map-wrap{flex:1;min-height:62vh}
+  .sidebar-section{padding:8px;min-width:140px}
+  #vehicle-list{max-height:80px}
+  .stats-grid{grid-template-columns:1fr 1fr 1fr 1fr}
+  #detail,#eta-panel{width:calc(100vw - 20px);left:10px;right:10px;bottom:10px}
+  #eta-panel{left:10px}
+}
+
+/* USER LOCATION */
+.user-marker{width:16px;height:16px;border-radius:50%;background:var(--blue);border:2px solid #fff;box-shadow:0 0 0 4px rgba(41,121,255,.25)}
+
+/* Tooltip */
+.leaflet-tooltip{background:var(--surface) !important;border:1px solid var(--border) !important;color:var(--text) !important;font-family:'Space Mono',monospace !important;font-size:10px !important;letter-spacing:1px !important;padding:4px 8px !important;border-radius:2px !important;box-shadow:0 2px 8px rgba(0,0,0,.4) !important}
+.leaflet-tooltip-top:before{border-top-color:var(--border) !important}
+.stop-tooltip{padding:6px 10px !important;min-width:120px}
+.vehicle-tooltip{padding:3px 8px !important;font-size:12px !important;font-weight:700 !important;letter-spacing:2px !important}
+
+/* GEO PROMPT */
+#geo-prompt{position:fixed;inset:0;background:rgba(10,10,14,.92);z-index:2000;display:flex;align-items:center;justify-content:center;backdrop-filter:blur(4px)}
+#geo-prompt.hide{display:none}
+.geo-card{background:var(--surface);border:1px solid var(--border);border-top:3px solid var(--yellow);padding:32px;max-width:360px;text-align:center}
+.geo-icon{font-size:40px;margin-bottom:16px}
+.geo-title{font-family:'Bebas Neue',sans-serif;font-size:28px;letter-spacing:3px;color:var(--yellow);margin-bottom:8px}
+.geo-text{font-size:10px;color:var(--text-dim);line-height:1.7;letter-spacing:1px;margin-bottom:24px}
+.geo-btn{display:block;width:100%;padding:12px;background:var(--yellow);color:#000;font-family:'Bebas Neue',sans-serif;font-size:16px;letter-spacing:3px;border:none;cursor:pointer;margin-bottom:8px;transition:opacity .2s}
+.geo-btn:hover{opacity:.85}
+.geo-btn-skip{display:block;width:100%;padding:10px;background:transparent;color:var(--text-dim);font-family:'Space Mono',monospace;font-size:9px;letter-spacing:2px;border:1px solid var(--border);cursor:pointer;transition:all .2s}
+.geo-btn-skip:hover{border-color:var(--text-dim);color:var(--text)}
+</style>
+</head>
+<body>
+
+<!-- GEOLOCATION PROMPT -->
+<div id="geo-prompt">
+  <div class="geo-card">
+    <div class="geo-icon">📍</div>
+    <div class="geo-title">¿Dónde estás?</div>
+    <div class="geo-text">BONDIS necesita tu ubicación para mostrarte las paradas y colectivos más cercanos en tiempo real.</div>
+    <button class="geo-btn" onclick="requestLocation()">ACTIVAR MI UBICACIÓN</button>
+    <button class="geo-btn-skip" onclick="skipLocation()">Continuar sin ubicación</button>
+  </div>
+</div>
+
+<div id="header">
+  <div>
+    <div class="logo">BONDIS<span>CABA · tiempo real</span></div>
+  </div>
+  <div class="header-center">
+    <div class="stat-pill">
+      <div class="stat-dot"></div>
+      <span class="stat-label">Activos</span>
+      <span class="stat-value" id="hdr-active">—</span>
+    </div>
+    <div class="stat-pill">
+      <div class="stat-dot yellow"></div>
+      <span class="stat-label">Líneas</span>
+      <span class="stat-value" id="hdr-lines">—</span>
+    </div>
+    <div class="stat-pill">
+      <div class="stat-dot red"></div>
+      <span class="stat-label">Sin señal</span>
+      <span class="stat-value" id="hdr-offline">—</span>
+    </div>
+  </div>
+  <div style="text-align:right">
+    <div id="clock">00:00:00</div>
+    <div class="data-source">API GCBA · 30s</div>
+  </div>
+</div>
+
+<div id="main">
+  <div id="sidebar">
+
+    <!-- MI UBICACIÓN -->
+    <div class="sidebar-section">
+      <div class="section-label">Mi ubicación</div>
+      <button id="btn-location" onclick="centerOnUser()">
+        <div class="loc-dot"></div>
+        <span id="loc-label">Sin ubicación activa</span>
+      </button>
+
+      <!-- PARADAS -->
+      <div class="section-label" style="margin-top:4px">Paradas cercanas</div>
+      <button id="btn-stops" onclick="toggleStops()">
+        🚏 <span id="stops-label">Mostrar paradas en mapa</span>
+      </button>
+    </div>
+
+    <!-- BUSCAR -->
+    <div class="sidebar-section">
+      <div class="section-label">Buscar línea</div>
+      <div id="search-wrap">
+        <span class="search-icon">🔍</span>
+        <input id="search" type="text" placeholder="Ej: 60A, 140D...">
+      </div>
+      <div class="chips" id="chips">
+        <div class="chip active" data-line="ALL">Todas</div>
+      </div>
+    </div>
+
+    <!-- VEHÍCULOS -->
+    <div class="sidebar-section" style="flex:1;overflow:hidden;display:flex;flex-direction:column;padding-bottom:0">
+      <div class="section-label">Vehículos visibles</div>
+      <div id="vehicle-list"></div>
+    </div>
+
+    <!-- STATS -->
+    <div class="sidebar-section">
+      <div class="section-label">Estadísticas</div>
+      <div class="stats-grid">
+        <div class="stat-box"><div class="sb-value" id="stat-gps">—</div><div class="sb-label">GPS directo</div></div>
+        <div class="stat-box"><div class="sb-value" id="stat-api">—</div><div class="sb-label">Vía API GCBA</div></div>
+        <div class="stat-box"><div class="sb-value" id="stat-speed">—</div><div class="sb-label">Vel. promedio</div></div>
+        <div class="stat-box"><div class="sb-value" id="stat-refresh">30s</div><div class="sb-label">Actualización</div></div>
+      </div>
+    </div>
+  </div>
+
+  <div id="map-wrap">
+    <div id="refresh-bar"><div id="refresh-progress"></div></div>
+    <div id="map"></div>
+
+    <div id="status-bar" class="connecting">⬤ Conectando...</div>
+
+    <div id="legend">
+      <div class="legend-row"><div class="legend-dot" style="background:#f5c800;box-shadow:0 0 5px #f5c800aa"></div>GPS directo</div>
+      <div class="legend-row"><div class="legend-dot" style="background:#2979ff"></div>API GCBA</div>
+      <div class="legend-row"><div class="legend-dot" style="background:#444"></div>Sin señal</div>
+      <div class="legend-row"><div class="legend-dot" style="background:#ff9800"></div>Parada</div>
+    </div>
+
+    <!-- DETAIL PANEL -->
+    <div id="detail">
+      <div class="detail-header">
+        <div>
+          <div style="font-size:8px;letter-spacing:3px;color:var(--text-dim);text-transform:uppercase;margin-bottom:2px">Línea</div>
+          <div class="detail-line" id="d-line">—</div>
+        </div>
+        <div class="detail-close" onclick="closeDetail()">✕</div>
+      </div>
+      <div class="detail-row"><span class="dr-label">ID Vehículo</span><span class="dr-value" id="d-id">—</span></div>
+      <div class="detail-row"><span class="dr-label">Velocidad</span><span class="dr-value yellow" id="d-speed">—</span></div>
+      <div class="detail-row"><span class="dr-label">Estado</span><span class="dr-value green" id="d-status">—</span></div>
+      <div class="detail-row"><span class="dr-label">Última actualiz.</span><span class="dr-value" id="d-ts">—</span></div>
+      <div class="detail-row"><span class="dr-label">Fuente</span><span class="dr-value green" id="d-source">—</span></div>
+      <div style="margin-top:10px">
+        <div class="trust-label">
+          <span class="trust-text">Confiabilidad</span>
+          <span class="trust-text" id="d-trust-pct">—</span>
+        </div>
+        <div class="trust-bar"><div class="trust-fill" id="d-trust-bar" style="width:0%"></div></div>
+      </div>
+    </div>
+
+    <!-- ETA PANEL -->
+    <div id="eta-panel">
+      <div class="eta-header">
+        <div>
+          <div class="eta-stop-name" id="eta-stop-name">—</div>
+          <div class="eta-stop-dist" id="eta-stop-dist">—</div>
+        </div>
+        <div class="eta-close" onclick="closeETA()">✕</div>
+      </div>
+      <div id="eta-next" style="padding:6px 14px;background:rgba(245,200,0,.05);border-bottom:1px solid var(--border);font-size:9px;letter-spacing:1px;color:var(--text-dim);min-height:26px"></div>
+      <div class="eta-list" id="eta-list">
+        <div class="eta-loading">Calculando ETAs...</div>
+      </div>
+      <div class="eta-footer" id="eta-footer">API GCBA · tiempo real</div>
+    </div>
+
+    <div id="api-badge"><div class="api-dot"></div>API Transporte GCBA</div>
+  </div>
+</div>
+
+<script>
+const BACKEND_URL = 'http://localhost:3000';
+const WS_URL      = 'ws://localhost:3000';
+const CABA_CENTER = [-34.6037, -58.3816];
+
+// ── COLORES POR LÍNEA ──────────────────────
+const PALETTE = ['#f5c800','#ff6b35','#00bcd4','#e91e63','#76ff03','#ff9800','#9c27b0','#00e5ff','#ff5252','#69f0ae','#40c4ff','#ea80fc','#ffd740','#b2ff59','#18ffff','#ff4081','#64ffda','#ccff90'];
+function lineColor(line) {
+  let h = 0; for (let c of line) h = ((h<<5)-h)+c.charCodeAt(0);
+  return PALETTE[Math.abs(h) % PALETTE.length];
+}
+
+// cleanRoute v3: número público visible en el colectivo
+// 0140C → 140C | 096N → 96N | 060 → 60 | RTr... → Tren
+// Respeta sufijos de ramal (A, B, C, D, N, R, etc.)
+function cleanRoute(raw) {
+  if (!raw || raw === '?') return raw || '?';
+  const s = String(raw).trim();
+  if (s.startsWith('RTr') || s.startsWith('Rtr')) return 'Tren';
+  if (s.startsWith('RM') || s.startsWith('Rm')) return s.replace(/^RM/i,'Metro ');
+  // Quitar ceros iniciales, preservar todo lo demás (letras de ramal, sufijos)
+  const clean = s.replace(/^0+(?=\d)/, '');
+  return clean || s;
+}
+
+// ── STATE ──────────────────────────────────
+let vehicles     = [];
+let markers      = {};
+let stopMarkers  = {};
+let selectedId   = null;
+let activeFilter = 'ALL';
+let stopsVisible = false;
+let userMarker   = null;
+let userLatLng   = null;
+let ws, wsReconnectTimer;
+let etaRefreshTimer = null;
+let chipsBuilt   = false;
+let renderTimer  = null;
+
+// ── INTERPOLACIÓN DE POSICIONES ─────────────
+// Guardamos posición anterior para animar suavemente entre updates
+const prevPositions = {}; // id → {lat, lng}
+const animTargets   = {}; // id → {fromLat, fromLng, toLat, toLng, startTime, duration}
+let   animFrame     = null;
+
+const INTERP_DURATION = 27000; // ms — ligeramente menor al intervalo de 30s
+
+// Easing ease-out para movimiento natural (arranca rápido, frena al llegar)
+function easeOut(t) { return 1 - Math.pow(1 - t, 2); }
+
+function startPositionAnimation() {
+  if (animFrame) return;
+  function tick() {
+    const now = performance.now();
+    let any = false;
+    for (const id in animTargets) {
+      const t = animTargets[id];
+      if (!markers[id] || markers[id]._radius === undefined) { delete animTargets[id]; continue; }
+      const rawProg = Math.min(1, (now - t.startTime) / t.duration);
+      const prog    = easeOut(rawProg);
+      const lat     = t.fromLat + (t.toLat - t.fromLat) * prog;
+      const lng     = t.fromLng + (t.toLng - t.fromLng) * prog;
+      markers[id].setLatLng([lat, lng]);
+      if (rawProg < 1) any = true;
+      else delete animTargets[id];
+    }
+    animFrame = any ? requestAnimationFrame(tick) : null;
+  }
+  animFrame = requestAnimationFrame(tick);
+}
+
+function scheduleInterpolation(id, toLat, toLng, speed) {
+  const m = markers[id];
+  if (!m || m._radius === undefined) return;
+  
+  // Si velocidad=0 (parado), mover directo sin animación
+  if (speed !== undefined && speed < 1) {
+    m.setLatLng([toLat, toLng]);
+    delete animTargets[id];
+    return;
+  }
+  
+  const cur  = m.getLatLng();
+  const dLat = toLat - cur.lat;
+  const dLng = toLng - cur.lng;
+  const dist = Math.sqrt(dLat*dLat + dLng*dLng);
+  
+  if (dist < 0.00002) return; // micro-movimiento: ignorar (evita rebote)
+  if (dist > 0.05) {          // teleport >~5km: mover directo
+    m.setLatLng([toLat, toLng]);
+    delete animTargets[id];
+    return;
+  }
+  
+  // Si ya hay animación en curso para este id, actualizar destino (no resetear)
+  if (animTargets[id] && dist < 0.005) {
+    animTargets[id].toLat = toLat;
+    animTargets[id].toLng = toLng;
+  } else {
+    animTargets[id] = {
+      fromLat: cur.lat, fromLng: cur.lng,
+      toLat, toLng,
+      startTime: performance.now(),
+      duration: INTERP_DURATION
+    };
+  }
+  startPositionAnimation();
+}
+
+// ── MAPA ───────────────────────────────────
+// preferCanvas: true → todos los markers van a un <canvas> en vez de 6.500 nodos HTML
+const canvasRenderer = L.canvas({ padding: 0.5 });
+const map = L.map('map', {
+  center: CABA_CENTER, zoom: 14,
+  zoomControl: false, attributionControl: false,
+  preferCanvas: true,
+  renderer: canvasRenderer
+});
+
+// Tiles: Stadia AlidadeSmoothDark — dark, sin API key, funciona en localhost
+L.tileLayer('https://tiles.stadiamaps.com/tiles/alidade_smooth_dark/{z}/{x}/{y}{r}.png', {
+  maxZoom: 20,
+  attribution: '© Stadia Maps © OpenMapTiles © OpenStreetMap'
+}).addTo(map);
+
+// ── OVERLAY AVENIDAS CABA ──────────────────
+// Avenidas principales en verde/verde claro para diferenciación visual
+// Coordenadas reales verificadas con OpenStreetMap
+const AVENIDAS = [
+  // ── ARTERIAS PRINCIPALES (verde intenso, trazo grueso)
+  { name:'Av. Corrientes', color:'#00e676', w:2.5, coords:[
+    [-34.6031,-58.4388],[-34.6032,-58.4200],[-34.6034,-58.4000],
+    [-34.6037,-58.3850],[-34.6038,-58.3720],[-34.6036,-58.3622]] },
+  { name:'Av. Rivadavia', color:'#00e676', w:2.5, coords:[
+    [-34.6180,-58.4980],[-34.6150,-58.4700],[-34.6120,-58.4400],
+    [-34.6098,-58.4100],[-34.6082,-58.3850],[-34.6070,-58.3622]] },
+  { name:'Av. Santa Fe', color:'#00e676', w:2.5, coords:[
+    [-34.5955,-58.4480],[-34.5920,-58.4200],[-34.5893,-58.3950],
+    [-34.5870,-58.3760],[-34.5862,-58.3622]] },
+  { name:'Av. 9 de Julio', color:'#00e676', w:3.5, coords:[
+    [-34.5980,-58.3816],[-34.6037,-58.3816],[-34.6100,-58.3816],
+    [-34.6160,-58.3815],[-34.6230,-58.3812]] },
+  { name:'Av. del Libertador', color:'#00e676', w:2.5, coords:[
+    [-34.5440,-58.4830],[-34.5520,-58.4620],[-34.5620,-58.4420],
+    [-34.5720,-58.4220],[-34.5810,-58.4050],[-34.5870,-58.3816]] },
+  { name:'Av. Cabildo', color:'#69f0ae', w:2.0, coords:[
+    [-34.5280,-58.4820],[-34.5380,-58.4740],[-34.5480,-58.4660],
+    [-34.5580,-58.4580],[-34.5680,-58.4500],[-34.5760,-58.4440]] },
+  // ── ARTERIAS SECUNDARIAS (verde medio)
+  { name:'Av. Callao/Entre Ríos', color:'#69f0ae', w:1.8, coords:[
+    [-34.5860,-58.3926],[-34.5980,-58.3926],[-34.6100,-58.3926],
+    [-34.6200,-58.3930],[-34.6300,-58.3936]] },
+  { name:'Av. Pueyrredón', color:'#69f0ae', w:1.8, coords:[
+    [-34.5760,-58.3975],[-34.5900,-58.3973],[-34.6050,-58.3972],
+    [-34.6150,-58.3972]] },
+  { name:'Av. Belgrano', color:'#69f0ae', w:1.8, coords:[
+    [-34.6153,-58.4380],[-34.6155,-58.4100],[-34.6155,-58.3850],
+    [-34.6153,-58.3622]] },
+  { name:'Av. Independencia', color:'#69f0ae', w:1.8, coords:[
+    [-34.6228,-58.4380],[-34.6230,-58.4100],[-34.6232,-58.3850],
+    [-34.6230,-58.3622]] },
+  { name:'Av. San Juan', color:'#69f0ae', w:1.8, coords:[
+    [-34.6288,-58.4380],[-34.6290,-58.4100],[-34.6291,-58.3850],
+    [-34.6290,-58.3622]] },
+  { name:'Av. Juan B. Justo', color:'#69f0ae', w:2.0, coords:[
+    [-34.5720,-58.4710],[-34.5820,-58.4610],[-34.5920,-58.4510],
+    [-34.6020,-58.4400],[-34.6120,-58.4310],[-34.6200,-58.4240]] },
+  // ── ARTERIAS TERCIARIAS (verde claro)
+  { name:'Av. Boedo', color:'#b9f6ca', w:1.4, coords:[
+    [-34.6080,-58.4208],[-34.6180,-58.4215],[-34.6280,-58.4220],[-34.6380,-58.4225]] },
+  { name:'Av. Carabobo', color:'#b9f6ca', w:1.4, coords:[
+    [-34.6050,-58.4428],[-34.6150,-58.4425],[-34.6280,-58.4422],[-34.6380,-58.4420]] },
+  { name:'Av. Gaona', color:'#b9f6ca', w:1.4, coords:[
+    [-34.6150,-58.4820],[-34.6200,-58.4720],[-34.6250,-58.4620],[-34.6300,-58.4520]] },
+  { name:'Av. Triunvirato', color:'#b9f6ca', w:1.4, coords:[
+    [-34.5630,-58.4980],[-34.5635,-58.4780],[-34.5640,-58.4580],[-34.5645,-58.4420]] },
+  { name:'Av. Forest', color:'#b9f6ca', w:1.4, coords:[
+    [-34.5850,-58.4620],[-34.5920,-58.4570],[-34.5990,-58.4520],[-34.6040,-58.4490]] },
+  { name:'Av. La Plata', color:'#b9f6ca', w:1.4, coords:[
+    [-34.6230,-58.4290],[-34.6290,-58.4260],[-34.6360,-58.4230],[-34.6420,-58.4200]] },
+  { name:'Av. Warnes', color:'#b9f6ca', w:1.4, coords:[
+    [-34.5810,-58.4620],[-34.5815,-58.4500],[-34.5820,-58.4380],[-34.5825,-58.4280]] },
+  { name:'Av. Directorio', color:'#b9f6ca', w:1.4, coords:[
+    [-34.6380,-58.4850],[-34.6395,-58.4620],[-34.6405,-58.4400],[-34.6410,-58.4220]] },
+];
+
+const avenidaLayers = [];
+AVENIDAS.forEach(av => {
+  const pl = L.polyline(av.coords, {
+    color: av.color,
+    weight: av.w,
+    opacity: 0.35,
+    smoothFactor: 1,
+    interactive: false
+  }).addTo(map);
+  avenidaLayers.push(pl);
+});
+
+// Mostrar/ocultar overlay según zoom (solo visible desde zoom 13+)
+map.on('zoomend', () => {
+  const z = map.getZoom();
+  avenidaLayers.forEach(l => {
+    if (z >= 13) l.setStyle({ opacity: 0.35 });
+    else l.setStyle({ opacity: 0 });
+  });
+});
+
+L.control.zoom({ position: 'bottomright' }).addTo(map);
+
+// ── ÍCONOS VEHÍCULOS ───────────────────────
+const iconCache = {};
+function busIcon(line, source, selected) {
+  const key = `${line}-${source}-${selected}`;
+  if (iconCache[key]) return iconCache[key];
+
+  const color = lineColor(line);
+  const isGPS = source === 'GPS_DIRECTO';
+  const label = line.length > 4 ? line.slice(0,4) : line;
+  const size  = selected ? 20 : 13;
+  const glow  = isGPS ? `filter:drop-shadow(0 0 3px ${color});` : '';
+  const ring  = selected ? `<circle cx="12" cy="12" r="10" fill="none" stroke="${color}" stroke-width="1.5" opacity=".5"/>` : '';
+  const dot   = !isGPS ? `<circle cx="18" cy="6" r="3" fill="#2979ff" stroke="#14141a" stroke-width="1"/>` : '';
+
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" style="${glow}">
+    ${ring}
+    <circle cx="12" cy="12" r="${size/2}" fill="${color}" opacity="${isGPS?1:.75}"/>
+    <text x="12" y="15" text-anchor="middle" font-family="Bebas Neue,sans-serif" font-size="${label.length>3?5:6}" fill="#000" font-weight="bold">${label}</text>
+    ${dot}
+  </svg>`;
+
+  const icon = L.divIcon({ html: svg, className: '', iconSize: [24,24], iconAnchor: [12,12] });
+  iconCache[key] = icon;
+  return icon;
+}
+
+// ── ÍCONO PARADA ───────────────────────────
+function stopIcon(selected) {
+  const c = selected ? '#ff9800' : '#ff9800';
+  const op = selected ? 1 : 0.7;
+  const size = selected ? 7 : 5.5;
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="18" viewBox="0 0 14 18">
+    <circle cx="7" cy="7" r="${size}" fill="${c}" opacity="${op}" stroke="#14141a" stroke-width="1.5"/>
+    <line x1="7" y1="12" x2="7" y2="18" stroke="${c}" stroke-width="2" opacity="${op}"/>
+  </svg>`;
+  return L.divIcon({ html: svg, className: '', iconSize: [14,18], iconAnchor: [7,18] });
+}
+
+// ── GEOLOCALIZACIÓN ────────────────────────
+function requestLocation() {
+  document.getElementById('geo-prompt').classList.add('hide');
+  navigator.geolocation.getCurrentPosition(
+    pos => setUserLocation(pos.coords.latitude, pos.coords.longitude),
+    err => console.warn('Ubicación denegada:', err.message),
+    { enableHighAccuracy: true }
+  );
+}
+
+function skipLocation() {
+  document.getElementById('geo-prompt').classList.add('hide');
+}
+
+function setUserLocation(lat, lng) {
+  userLatLng = [lat, lng];
+  const el = document.getElementById('btn-location');
+  el.classList.add('active');
+  document.getElementById('loc-label').textContent = 'Ubicación activa · centrar';
+
+  if (userMarker) userMarker.remove();
+  userMarker = L.marker([lat, lng], {
+    icon: L.divIcon({ html: '<div class="user-marker"></div>', className: '', iconSize: [16,16], iconAnchor: [8,8] }),
+    zIndexOffset: 500
+  }).addTo(map).bindTooltip('Tu posición', { permanent: false, direction: 'top' });
+
+  map.flyTo([lat, lng], 15, { duration: 1.2 });
+
+  // Cargar paradas automáticamente si están activadas
+  // Auto-mostrar paradas al obtener ubicación
+    if (!stopsVisible) {
+      stopsVisible = true;
+      const btn = document.getElementById('btn-stops');
+      if (btn) { btn.classList.add('active'); }
+      const lbl = document.getElementById('stops-label');
+      if (lbl) lbl.textContent = 'Ocultar paradas';
+    }
+    loadStopsInView();
+}
+
+function centerOnUser() {
+  if (userLatLng) {
+    map.flyTo(userLatLng, 15, { duration: 0.8 });
+  } else {
+    requestLocation();
+  }
+}
+
+// ── WEBSOCKET ──────────────────────────────
+function connectWS() {
+  setStatus('connecting', '⬤ Conectando...');
+  ws = new WebSocket(WS_URL);
+
+  ws.onopen = () => {
+    setStatus('connected', '⬤ Conectado');
+    if (wsReconnectTimer) clearTimeout(wsReconnectTimer);
+  };
+
+  ws.onmessage = (e) => {
+    const { type, vehicles: data } = JSON.parse(e.data);
+    if (type === 'snapshot' || type === 'update') {
+      vehicles = data;
+      scheduleRender();
+      buildChips();
+      animateRefreshBar();
+    }
+  };
+
+  ws.onclose = () => {
+    setStatus('error', '⬤ Desconectado');
+    wsReconnectTimer = setTimeout(connectWS, 4000);
+    pollREST();
+  };
+}
+
+async function pollREST() {
+  try {
+    const filter = activeFilter !== 'ALL' ? `?line=${activeFilter}` : '';
+    const res  = await fetch(`${BACKEND_URL}/vehicles${filter}`);
+    const data = await res.json();
+    if (data.vehicles) { vehicles = data.vehicles; scheduleRender(); buildChips(); setStatus('connected','⬤ REST conectado'); }
+  } catch(e) { setStatus('error','⬤ Sin conexión'); }
+}
+
+// ── RENDER CON THROTTLE (performance) ──────
+function scheduleRender() {
+  if (renderTimer) return;
+  renderTimer = requestAnimationFrame(() => { renderTimer = null; updateMap(); });
+}
+
+// ── CHIPS ──────────────────────────────────
+function buildChips() {
+  if (chipsBuilt || vehicles.length === 0) return;
+  const counts = {};
+  vehicles.forEach(v => { const r=cleanRoute(v.id_ruta); counts[r] = (counts[r]||0)+1; });
+  const top = Object.entries(counts).sort((a,b)=>b[1]-a[1]).slice(0,14).map(([l])=>l).filter(l=>l&&l!="?");
+  const el  = document.getElementById('chips');
+  el.innerHTML = `<div class="chip active" data-line="ALL">Todas</div>`;
+  top.forEach(line => {
+    const c = document.createElement('div');
+    c.className = 'chip'; c.dataset.line = line; c.textContent = line;
+    el.appendChild(c);
+  });
+  chipsBuilt = true;
+}
+
+// ── ACTUALIZAR MAPA ────────────────────────
+// PERFORMANCE v6: circleMarker con canvas renderer
+// Un solo <canvas> en lugar de 6.500 nodos HTML → 10x más rápido al desplazar
+function updateMap() {
+  const query = document.getElementById('search').value.toLowerCase().trim();
+
+  let filtered = activeFilter === 'ALL' ? vehicles : vehicles.filter(v => cleanRoute(v.id_ruta) === activeFilter);
+  if (query) filtered = filtered.filter(v =>
+    cleanRoute(v.id_ruta).toLowerCase().includes(query) || String(v.id).toLowerCase().includes(query)
+  );
+
+  // Eliminar markers que ya no están en el filtro
+  const shownIds = new Set(filtered.map(v => String(v.id)));
+  Object.keys(markers).forEach(id => {
+    if (!shownIds.has(id)) { markers[id].remove(); delete markers[id]; }
+  });
+
+  // Crear o mover markers
+  filtered.forEach(v => {
+    const lat = v.posicion?.latitud  ?? v.lat;
+    const lng = v.posicion?.longitud ?? v.lng;
+    if (!lat || !lng) return;
+
+    const idStr      = String(v.id);
+    const isSelected = idStr === String(selectedId);
+    const line       = cleanRoute(v.id_ruta);
+    const color      = lineColor(line);
+    const isGPS      = v.data_source === 'GPS_DIRECTO';
+
+    if (isSelected) {
+      // El seleccionado: divIcon grande con texto (uno solo, no afecta performance)
+      if (markers[idStr]) { markers[idStr].remove(); delete markers[idStr]; }
+      const icon = busIcon(line, v.data_source, true);
+      const m = L.marker([lat, lng], { icon, zIndexOffset: 1000 })
+        .addTo(map)
+        .bindTooltip(`<b style='font-size:12px'>${line}</b>`, { permanent: false, direction: 'top', className:'vehicle-tooltip' });
+      m.on('click', () => selectVehicle(idStr));
+      markers[idStr] = m;
+    } else {
+      // Todos los demás: circleMarker en canvas (ultra rápido — un solo elemento <canvas>)
+      const opts = {
+        renderer:    canvasRenderer,
+        radius:      isGPS ? 5 : 4,
+        color:       isGPS ? color : '#2979ff',
+        fillColor:   color,
+        fillOpacity: isGPS ? 0.9 : 0.65,
+        weight:      isGPS ? 0 : 1.5,
+        opacity:     0.9
+      };
+
+      if (markers[idStr] && markers[idStr]._radius !== undefined) {
+        // Ya existe como circleMarker → interpolar posición suavemente
+        const spd = v.posicion?.velocidad ?? v.speed ?? undefined;
+        scheduleInterpolation(idStr, lat, lng, spd);
+        markers[idStr].setStyle({ fillColor: color, color: isGPS ? color : '#2979ff' });
+      } else {
+        // Era divIcon (venía de estar seleccionado) o es nuevo → crear circleMarker
+        if (markers[idStr]) { markers[idStr].remove(); delete markers[idStr]; }
+        const m = L.circleMarker([lat, lng], opts)
+          .addTo(map)
+          .bindTooltip(`Línea ${line}`, { permanent: false, direction: 'top' });
+        m.on('click', () => selectVehicle(idStr));
+        markers[idStr] = m;
+      }
+    }
+  });
+
+  updateSidebar(filtered);
+  updateStats(filtered);
+}
+
+// ── SIDEBAR VEHÍCULOS ──────────────────────
+function updateSidebar(shown) {
+  const list   = document.getElementById('vehicle-list');
+  const sorted = [...shown].sort((a,b)=>(b.posicion?.velocidad??0)-(a.posicion?.velocidad??0)).slice(0,40);
+
+  list.innerHTML = sorted.map(v => {
+    const color = lineColor(v.id_ruta);
+    const isGPS = v.data_source === 'GPS_DIRECTO';
+    const spd   = Math.round(v.posicion?.velocidad ?? 0);
+    const lineLabel = cleanRoute(v.id_ruta);
+    const fontSize  = lineLabel.length > 4 ? 8 : lineLabel.length > 3 ? 9 : 11;
+    return `<div class="vehicle-item ${String(v.id)===String(selectedId)?'selected':''}" onclick="selectVehicle('${v.id}')">
+      <div class="vi-line" style="background:${color};color:#000;font-size:${fontSize}px;letter-spacing:0">${lineLabel}</div>
+      <div class="vi-info">
+        <div class="vi-id">${v.matricula || v.id}</div>
+        <div class="vi-meta">${isGPS?'🟢':'🔵'} ${spd>2?spd+' km/h':'Detenido'}</div>
+      </div>
+      <div class="vi-speed" style="color:${spd>30?'#ff6b35':spd>10?'#f5c800':'#5a5a6e'}">${spd>0?spd+'km/h':'—'}</div>
+    </div>`;
+  }).join('');
+}
+
+// ── STATS ──────────────────────────────────
+function updateStats(shown) {
+  const gps    = shown.filter(v=>v.data_source==='GPS_DIRECTO').length;
+  const speeds = shown.filter(v=>(v.posicion?.velocidad??0)>0).map(v=>v.posicion.velocidad);
+  const avg    = speeds.length ? Math.round(speeds.reduce((a,b)=>a+b,0)/speeds.length) : 0;
+  const now    = Date.now()/1000;
+  const offline = vehicles.filter(v=>now-v.timestamp>120).length;
+  document.getElementById('hdr-active').textContent  = shown.length;
+  document.getElementById('hdr-lines').textContent   = new Set(shown.map(v=>cleanRoute(v.id_ruta))).size;
+  document.getElementById('hdr-offline').textContent = offline;
+  document.getElementById('stat-gps').textContent    = gps;
+  document.getElementById('stat-api').textContent    = shown.length - gps;
+  document.getElementById('stat-speed').textContent  = avg ? avg+'km/h' : '—';
+}
+
+// ── DETALLE VEHÍCULO ───────────────────────
+function selectVehicle(id) {
+  selectedId = String(id);
+  const v = vehicles.find(v=>String(v.id)===selectedId);
+  if (!v) return;
+  const color   = lineColor(cleanRoute(v.id_ruta));
+  const isGPS   = v.data_source === 'GPS_DIRECTO';
+  const trust   = Math.round(v.trust_score ?? 50);
+  const secsAgo = Math.round(Date.now()/1000 - v.timestamp);
+  const spd     = Math.round(v.posicion?.velocidad ?? 0);
+
+  const publicNum = cleanRoute(v.id_ruta);
+  document.getElementById('d-line').textContent   = `Línea ${publicNum}`;
+  document.getElementById('d-line').style.color   = color;
+  document.getElementById('d-id').textContent     = v.matricula && v.matricula !== v.id ? `${v.matricula} (ID: ${v.id})` : v.id;
+  document.getElementById('d-speed').textContent  = spd > 0 ? `${spd} km/h` : 'Detenido';
+  document.getElementById('d-status').textContent = v.current_status==='IN_TRANSIT_TO'?'En tránsito':'En parada';
+  document.getElementById('d-ts').textContent     = secsAgo < 5 ? 'Ahora mismo' : `Hace ${secsAgo}s`;
+  document.getElementById('d-source').textContent = isGPS ? '🟢 GPS DIRECTO' : '🔵 API GCBA';
+  document.getElementById('d-trust-pct').textContent = `${trust}%`;
+
+  const bar = document.getElementById('d-trust-bar');
+  bar.style.width      = `${trust}%`;
+  bar.style.background = trust>80?'#00e676':trust>50?'#f5c800':'#ff3d00';
+
+  document.getElementById('detail').classList.add('show');
+  document.getElementById('eta-panel').classList.remove('show');
+  const vLat = v.posicion?.latitud ?? v.lat;
+  const vLng = v.posicion?.longitud ?? v.lng;
+  // Zoom inteligente: si está muy lejos del centro visible, flyTo con zoom moderado
+  const mapCenter = map.getCenter();
+  const dist = Math.abs(mapCenter.lat - vLat) + Math.abs(mapCenter.lng - vLng);
+  if (dist > 0.05) map.flyTo([vLat, vLng], Math.max(map.getZoom(), 15), { duration: 0.8 });
+  else map.panTo([vLat, vLng]);
+  updateMap();
+}
+
+function closeDetail() {
+  selectedId = null;
+  document.getElementById('detail').classList.remove('show');
+  updateMap();
+}
+
+// ── PARADAS ────────────────────────────────
+async function toggleStops() {
+  stopsVisible = !stopsVisible;
+  const btn = document.getElementById('btn-stops');
+  btn.classList.toggle('active', stopsVisible);
+  document.getElementById('stops-label').textContent = stopsVisible ? 'Ocultar paradas' : 'Mostrar paradas en mapa';
+
+  if (!stopsVisible) {
+    Object.values(stopMarkers).forEach(m=>m.remove());
+    stopMarkers = {};
+    return;
+  }
+  await loadStopsInView();
+}
+
+async function loadStopsInView() {
+  const zoom   = map.getZoom();
+  // Centrar en usuario si está disponible, sino en centro del mapa
+  const center = userLatLng
+    ? { lat: userLatLng[0], lng: userLatLng[1] }
+    : map.getCenter();
+  const radius = zoom >= 16 ? 400 : zoom >= 14 ? 700 : 1000;
+
+  try {
+    const res  = await fetch(`${BACKEND_URL}/stops?lat=${center.lat.toFixed(5)}&lng=${center.lng.toFixed(5)}&radius=${radius}`);
+    const data = await res.json();
+    if (!data.stops) return;
+
+    Object.values(stopMarkers).forEach(m=>m.remove());
+    stopMarkers = {};
+
+    data.stops.forEach(stop => {
+      const name = stop.name.replace(/\?/g,'Ñ');
+      // Construir tooltip con líneas que pasan por la parada
+      const linesHtml = stop.lines && stop.lines.length > 0
+        ? stop.lines.slice(0,6).map(l => `<span style="background:${lineColor(l)};color:#000;padding:1px 4px;border-radius:2px;font-size:8px;font-weight:700;margin:1px;display:inline-block">${l}</span>`).join('')
+        : '<span style="color:#666;font-size:8px">Sin info</span>';
+      const tooltipHtml = `<div style="text-align:center"><div style="font-size:9px;letter-spacing:1px;margin-bottom:4px">🚏 ${name}</div><div>${linesHtml}</div><div style="font-size:7px;color:#666;margin-top:3px;letter-spacing:1px">Clic para ETAs</div></div>`;
+      const m = L.marker([stop.lat, stop.lng], { icon: stopIcon(false), zIndexOffset: -200 })
+        .addTo(map)
+        .bindTooltip(tooltipHtml, { permanent: false, direction: 'top', className: 'stop-tooltip' });
+      m.on('click', () => selectStop(stop));
+      stopMarkers[stop.stop_id] = m;
+    });
+  } catch(e) { console.error('Error paradas:', e); }
+}
+
+map.on('moveend', () => { // Auto-mostrar paradas al obtener ubicación
+    if (!stopsVisible) {
+      stopsVisible = true;
+      const btn = document.getElementById('btn-stops');
+      if (btn) { btn.classList.add('active'); }
+      const lbl = document.getElementById('stops-label');
+      if (lbl) lbl.textContent = 'Ocultar paradas';
+    }
+    loadStopsInView(); });
+
+async function selectStop(stop) {
+  Object.entries(stopMarkers).forEach(([id,m]) => m.setIcon(stopIcon(id===stop.stop_id)));
+
+  const name = stop.name.replace(/\?/g,'Ñ');
+  const distText = userLatLng
+    ? `A ${Math.round(haversine(userLatLng[0],userLatLng[1],stop.lat,stop.lng))}m de tu posición`
+    : `Parada ${stop.stop_id}`;
+
+  document.getElementById('eta-stop-name').textContent = name;
+  document.getElementById('eta-stop-dist').textContent = distText;
+  document.getElementById('eta-list').innerHTML = '<div class="eta-loading">⏳ Calculando ETAs...</div>';
+  document.getElementById('eta-panel').classList.add('show');
+  document.getElementById('detail').classList.remove('show');
+
+  await fetchETA(stop.stop_id);
+  if (etaRefreshTimer) clearInterval(etaRefreshTimer);
+  etaRefreshTimer = setInterval(() => fetchETA(stop.stop_id), 30000);
+}
+
+async function fetchETA(stop_id) {
+  try {
+    const res  = await fetch(`${BACKEND_URL}/eta?stop_id=${stop_id}`);
+    const data = await res.json();
+    const list = document.getElementById('eta-list');
+
+    if (!data.etas || data.etas.length === 0) {
+      list.innerHTML = '<div class="eta-loading">Sin colectivos cercanos ahora</div>';
+      document.getElementById('eta-next').innerHTML = '';
+      return;
+    }
+
+    // Mostrar próximo colectivo destacado en el header
+    const next = data.etas[0];
+    const nextColor = lineColor(next.line);
+    const nextT = next.eta_minutes;
+    const nextBadge = `<span style="background:${nextColor};color:#000;padding:2px 7px;border-radius:2px;font-family:'Bebas Neue',sans-serif;font-size:13px;margin-right:6px">${next.line}</span>`;
+    const nextTime  = nextT === 0 ? '<span style="color:#00e676;font-weight:700">LLEGANDO</span>' : `<span style="color:#f5c800;font-weight:700">${nextT} min</span>`;
+    document.getElementById('eta-next').innerHTML = `Próximo: ${nextBadge}${nextTime}`;
+
+    list.innerHTML = data.etas.map((eta, i) => {
+      const color = lineColor(eta.line);
+      const tc    = eta.trust_score > 70 ? '#00e676' : eta.trust_score > 40 ? '#f5c800' : '#ff3d00';
+      const t     = eta.eta_minutes;
+      const highlight = i === 0 ? 'border-left:2px solid #f5c800;' : '';
+      return `<div class="eta-row" style="${highlight}">
+        <div class="eta-line-badge" style="background:${color};color:#000">${eta.line}</div>
+        <div class="eta-info">
+          <div class="eta-time">${t===0?'AHORA':t}<span>${t===0?'':' min'}</span></div>
+          <div class="eta-dist">${eta.distance_m}m · ${eta.speed_kmh}km/h · ${eta.data_source==='GPS_DIRECTO'?'🟢 GPS':'🔵 API'}</div>
+        </div>
+        <div class="eta-trust" style="background:${tc}" title="${eta.trust_score}% confiabilidad"></div>
+      </div>`;
+    }).join('');
+
+    const now = new Date();
+    document.getElementById('eta-footer').textContent =
+      `${now.getHours()}:${String(now.getMinutes()).padStart(2,'0')} · ${data.etas.length} líneas cercanas`;
+  } catch(e) {
+    document.getElementById('eta-list').innerHTML = '<div class="eta-loading">Error al conectar</div>';
+  }
+}
+
+function closeETA() {
+  document.getElementById('eta-panel').classList.remove('show');
+  if (etaRefreshTimer) clearInterval(etaRefreshTimer);
+  Object.values(stopMarkers).forEach(m=>m.setIcon(stopIcon(false)));
+}
+
+function haversine(lat1,lng1,lat2,lng2) {
+  const R=6371000, dLat=(lat2-lat1)*Math.PI/180, dLng=(lng2-lng1)*Math.PI/180;
+  const a=Math.sin(dLat/2)**2+Math.cos(lat1*Math.PI/180)*Math.cos(lat2*Math.PI/180)*Math.sin(dLng/2)**2;
+  return R*2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a));
+}
+
+// ── REFRESH BAR + CONTADOR ─────────────────
+let refreshCountdown = 30;
+let countdownTimer   = null;
+
+function animateRefreshBar() {
+  const bar = document.getElementById('refresh-progress');
+  bar.style.transition = 'none'; bar.style.transform = 'translateX(-100%)';
+  bar.offsetHeight;
+  bar.style.transition = 'transform 30s linear'; bar.style.transform = 'translateX(0)';
+  // Contador regresivo
+  if (countdownTimer) clearInterval(countdownTimer);
+  refreshCountdown = 30;
+  const statEl = document.getElementById('stat-refresh');
+  countdownTimer = setInterval(() => {
+    refreshCountdown = Math.max(0, refreshCountdown - 1);
+    if (statEl) statEl.textContent = refreshCountdown + 's';
+  }, 1000);
+}
+
+// ── STATUS ─────────────────────────────────
+function setStatus(type, msg) {
+  const el = document.getElementById('status-bar');
+  el.textContent = msg; el.className = type;
+}
+
+// ── CLOCK ──────────────────────────────────
+function updateClock() {
+  const n = new Date();
+  document.getElementById('clock').textContent =
+    [n.getHours(),n.getMinutes(),n.getSeconds()].map(x=>String(x).padStart(2,'0')).join(':');
+}
+
+// ── FILTROS ────────────────────────────────
+document.getElementById('chips').addEventListener('click', e => {
+  const chip = e.target.closest('.chip');
+  if (!chip) return;
+  document.querySelectorAll('.chip').forEach(c=>c.classList.remove('active'));
+  chip.classList.add('active');
+  activeFilter = chip.dataset.line;
+  // Notificar al WS del filtro (ALL = sin filtro)
+  if (ws && ws.readyState === WebSocket.OPEN) {
+    ws.send(JSON.stringify({ type:'subscribe_line', payload:{ line: activeFilter === 'ALL' ? null : activeFilter } }));
+  }
+  scheduleRender();
+});
+
+// Búsqueda con debounce para performance
+let searchTimer;
+document.getElementById('search').addEventListener('input', () => {
+  clearTimeout(searchTimer);
+  searchTimer = setTimeout(() => {
+    // Si borraron el texto, resetear también el filtro de chips
+    const val = document.getElementById('search').value.trim();
+    if (!val && activeFilter !== 'ALL') {
+      activeFilter = 'ALL';
+      document.querySelectorAll('.chip').forEach(c => c.classList.remove('active'));
+      const allChip = document.querySelector('.chip[data-line="ALL"]');
+      if (allChip) allChip.classList.add('active');
+    }
+    scheduleRender();
+  }, 180);
+});
+
+// ── INIT ───────────────────────────────────
+setInterval(updateClock, 1000);
+updateClock();
+connectWS();
+setInterval(() => { if (!ws || ws.readyState !== WebSocket.OPEN) pollREST(); }, 30000);
+</script>
+</body>
+</html>

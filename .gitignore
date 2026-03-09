@@ -1,0 +1,5 @@
+node_modules/
+gtfs/
+gtfs.zip
+.env
+*.log
