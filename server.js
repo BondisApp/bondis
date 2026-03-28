@@ -387,8 +387,8 @@ app.get('/stats', (req, res) => {
 // Servir frontend
 const path = require('path');
 app.get('/', (req, res) => {
-  // Servir v12, fallback a v9
-  const v12 = path.join(__dirname, 'bondis-mvp-v13.html');
+  // Servir v13, fallback a v9
+  const v13 = path.join(__dirname, 'bondis-mvp-v13.html');
   const v9  = path.join(__dirname, 'bondis-mvp-v9.html');
   const fs  = require('fs');
   res.sendFile(fs.existsSync(v13) ? v13 : v9);
