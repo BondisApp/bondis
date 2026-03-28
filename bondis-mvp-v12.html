@@ -1422,9 +1422,10 @@ map.on('click', () => {
 function setStatusDot(status) {
   const dot = document.getElementById('status-dot');
   dot.className = '';
-  if (status === 'connected')    { dot.classList.add(''); dot.title = 'Conectado'; }
   if (status === 'disconnected') { dot.classList.add('disconnected'); dot.title = 'Desconectado'; }
-  if (status === 'connecting')   { dot.classList.add('connecting'); dot.title = 'Conectando...'; }
+  if (status === 'connecting')   { dot.classList.add('connecting');   dot.title = 'Conectando...'; }
+  // 'connected' → sin clase extra, el CSS base ya es verde
+  dot.title = status === 'connected' ? 'Conectado' : dot.title;
 }
 
 function hideLoading() {
