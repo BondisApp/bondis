@@ -387,11 +387,11 @@ app.get('/stats', (req, res) => {
 // Servir frontend
 const path = require('path');
 app.get('/', (req, res) => {
-  // Intentar v10 primero, fallback a v9
-  const v11 = path.join(__dirname, 'bondis-mvp-v11.html');
+  // Servir v12, fallback a v9
+  const v12 = path.join(__dirname, 'bondis-mvp-v12.html');
   const v9  = path.join(__dirname, 'bondis-mvp-v9.html');
   const fs  = require('fs');
-  res.sendFile(fs.existsSync(v11) ? v11 : v9);
+  res.sendFile(fs.existsSync(v12) ? v12 : v9);
 });
 app.get('/bondis', (req, res) => res.redirect('/'));
 
