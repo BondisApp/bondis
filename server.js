@@ -388,11 +388,12 @@ app.get('/stats', (req, res) => {
 // Servir frontend
 const path = require('path');
 app.get('/', (req, res) => {
-  // Servir v13, fallback a v9
+  // Servir v14, fallback a v13, fallback a v9
+  const v14 = path.join(__dirname, 'bondis-mvp-v14.html');
   const v13 = path.join(__dirname, 'bondis-mvp-v13.html');
   const v9  = path.join(__dirname, 'bondis-mvp-v9.html');
   const fs  = require('fs');
-  res.sendFile(fs.existsSync(v13) ? v13 : v9);
+  res.sendFile(fs.existsSync(v14) ? v14 : (fs.existsSync(v13) ? v13 : v9));
 });
 app.get('/bondis', (req, res) => res.redirect('/'));
 
