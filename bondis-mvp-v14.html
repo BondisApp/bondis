@@ -173,6 +173,9 @@ body{font-family:'Space Mono',monospace;background:var(--bg);color:var(--text);h
 .legend-row{display:flex;align-items:center;gap:7px;margin-bottom:6px;font-size:9px;color:var(--text-dim);letter-spacing:1px}
 .legend-row:last-child{margin-bottom:0}
 .legend-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
+/* v14: control para cambiar de estilo de mapa */
+.legend-toggle{cursor:pointer;margin-top:8px;padding-top:8px;border-top:1px solid var(--border);transition:color .15s}
+.legend-toggle:hover{color:var(--yellow)}
 
 /* API BADGE */
 #api-badge{position:absolute;bottom:20px;left:20px;background:rgba(34,34,40,.92);border:1px solid var(--border);padding:6px 10px;z-index:999;font-size:8px;letter-spacing:2px;text-transform:uppercase;color:var(--text-dim);display:flex;align-items:center;gap:6px}
@@ -440,6 +443,8 @@ body{font-family:'Space Mono',monospace;background:var(--bg);color:var(--text);h
   .lm-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
   .lm-text { font-size: 13px; color: var(--text); }
   .lm-sub  { font-size: 10px; color: var(--text-dim); }
+  .lm-toggle { cursor: pointer; margin-bottom: 14px; padding-top: 12px; border-top: 1px solid var(--border); }
+  .lm-toggle .lm-dot { font-size: 9px; display: flex; align-items: center; justify-content: center; }
   #lm-close {
     width: 100%; height: 44px;
     background: var(--surface2);
@@ -496,9 +501,11 @@ body{font-family:'Space Mono',monospace;background:var(--bg);color:var(--text);h
 .stop-tooltip{padding:6px 10px !important;min-width:120px}
 .vehicle-tooltip{padding:3px 8px !important;font-size:12px !important;font-weight:700 !important;letter-spacing:2px !important}
 
-/* v14: número de línea siempre visible sobre el marcador (desde LABEL_MIN_ZOOM) */
-.bus-num-label{background:transparent !important;border:none !important;box-shadow:none !important;padding:0 !important;margin:0 !important;color:#fff !important;font-family:'Bebas Neue',sans-serif !important;font-size:10px !important;font-weight:700;letter-spacing:.5px;text-shadow:0 0 3px #000,0 0 3px #000,0 1px 2px #000;pointer-events:none}
-.bus-num-label::before{display:none !important}
+/* v14: número de línea siempre visible sobre el marcador (desde LABEL_MIN_ZOOM).
+   Es una mini-etiqueta con flechita, igual que el resto de los tooltips de la
+   app — así queda claramente "pegada" al punto del colectivo, no flotando suelta. */
+.bus-num-label{background:var(--surface) !important;border:1px solid var(--border) !important;border-radius:3px !important;box-shadow:0 1px 5px rgba(0,0,0,.5) !important;padding:1px 6px !important;margin:0 !important;color:#fff !important;font-family:'Bebas Neue',sans-serif !important;font-size:11px !important;font-weight:700;letter-spacing:.5px;pointer-events:none}
+.bus-num-label:before{border-top-color:var(--border) !important}
 
 /* GEO PROMPT */
 #geo-prompt{position:fixed;inset:0;background:rgba(10,10,14,.92);z-index:2000;display:flex;align-items:center;justify-content:center;backdrop-filter:blur(4px)}
@@ -653,6 +660,10 @@ body{font-family:'Space Mono',monospace;background:var(--bg);color:var(--text);h
           <div><div class="lm-text">Parada</div><div class="lm-sub">Tocá para ETA</div></div>
         </div>
       </div>
+      <div class="lm-item lm-toggle" onclick="toggleMapStyle()">
+        <div class="lm-dot" style="background:#888">🗺️</div>
+        <div><div class="lm-text" id="mapstyle-toggle-label-mobile">Mapa: con nombres de calles</div><div class="lm-sub">Tocá para cambiar de estilo</div></div>
+      </div>
       <button id="lm-close" onclick="hideLegendModal()">CERRAR</button>
     </div>
   </div>
@@ -668,6 +679,9 @@ body{font-family:'Space Mono',monospace;background:var(--bg);color:var(--text);h
       <div class="legend-row"><div class="legend-dot" style="background:#2979ff"></div>API GCBA</div>
       <div class="legend-row"><div class="legend-dot" style="background:#444"></div>Sin señal</div>
       <div class="legend-row"><div class="legend-dot" style="background:#ff9800"></div>Parada</div>
+      <div class="legend-row legend-toggle" onclick="toggleMapStyle()" title="Cambiar estilo de mapa">
+        <span id="mapstyle-toggle-label">🗺️ Mapa: con nombres de calles</span>
+      </div>
     </div>
 
     <!-- DETAIL PANEL -->
@@ -907,13 +921,37 @@ const MAP_STYLES = {
   dark:          { url:'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',     attribution:'© CartoDB © OpenStreetMap' },
   dark_nolabels: { url:'https://{s}.basemaps.cartocdn.com/dark_nolabels/{z}/{x}/{y}{r}.png', attribution:'© CartoDB © OpenStreetMap' }
 };
-const MAP_STYLE = 'dark';
+const MAP_STYLE = 'dark'; // estilo por defecto la primera vez que alguien abre la app
 
-L.tileLayer(MAP_STYLES[MAP_STYLE].url, {
-  maxZoom: 20,
-  subdomains: 'abcd',
-  attribution: MAP_STYLES[MAP_STYLE].attribution
-}).addTo(map);
+// v14: ahora hay un botón en la leyenda para cambiar de estilo en vivo — esto
+// recuerda la elección del usuario entre visitas (localStorage)
+let MAP_STYLE_CURRENT = localStorage.getItem('bondis_map_style') || MAP_STYLE;
+if (!MAP_STYLES[MAP_STYLE_CURRENT]) MAP_STYLE_CURRENT = MAP_STYLE;
+let currentTileLayer = null;
+
+function applyMapStyle(styleKey) {
+  const style = MAP_STYLES[styleKey] || MAP_STYLES[MAP_STYLE];
+  if (currentTileLayer) map.removeLayer(currentTileLayer);
+  currentTileLayer = L.tileLayer(style.url, {
+    maxZoom: 20,
+    subdomains: 'abcd',
+    attribution: style.attribution
+  }).addTo(map);
+  localStorage.setItem('bondis_map_style', styleKey);
+
+  const label = styleKey === 'dark_nolabels' ? 'Mapa: sin nombres de calles' : 'Mapa: con nombres de calles';
+  ['mapstyle-toggle-label', 'mapstyle-toggle-label-mobile'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.textContent = label;
+  });
+}
+
+function toggleMapStyle() {
+  MAP_STYLE_CURRENT = MAP_STYLE_CURRENT === 'dark' ? 'dark_nolabels' : 'dark';
+  applyMapStyle(MAP_STYLE_CURRENT);
+}
+
+applyMapStyle(MAP_STYLE_CURRENT);
 
 // ── OVERLAY AVENIDAS CABA — v14: todas en amarillo, nunca desaparecen ──
 const AVENIDA_YELLOW = '#f5c800';
@@ -1008,7 +1046,7 @@ function refreshMarkerLabels() {
     if (id === String(selectedId) || !m._pubLabel) return;
     const inView = showLabels && bounds.contains(m.getLatLng());
     if (inView && !m._labelBound) {
-      m.bindTooltip(m._pubLabel, { permanent:true, direction:'center', className:'bus-num-label', interactive:false });
+      m.bindTooltip(m._pubLabel, { permanent:true, direction:'top', offset:[0,-2], className:'bus-num-label', interactive:false });
       m._labelBound = true;
     } else if (!inView && m._labelBound) {
       const branchTxt = m._branchCode ? ` · Ramal ${m._branchCode}` : '';
@@ -1361,13 +1399,22 @@ async function toggleStops() {
 
 const STOPS_RADIUS_M = 400; // v14: radio fijo — ni muy pocas paradas ni satura el mapa
 
+// v14 fix: si el usuario activa su ubicación real justo después de que cargó el
+// mapa, quedaban DOS pedidos de paradas en vuelo (uno del centro por defecto,
+// otro de su ubicación real) y el que respondía último "ganaba" — a veces
+// pisando las paradas correctas con las del centro viejo. Este contador
+// asegura que solo se apliquen los resultados del pedido más reciente.
+let stopsRequestId = 0;
+
 async function loadStopsInView() {
+  const myRequestId = ++stopsRequestId;
   const center = userLatLng ? { lat: userLatLng[0], lng: userLatLng[1] } : map.getCenter();
   const radius = STOPS_RADIUS_M;
 
   try {
     const res  = await fetch(`${window.BACKEND_URL}/stops?lat=${center.lat.toFixed(5)}&lng=${center.lng.toFixed(5)}&radius=${radius}`);
     const data = await res.json();
+    if (myRequestId !== stopsRequestId) return; // llegó una respuesta vieja, ignorarla
     if (!data.stops) return;
 
     Object.values(stopMarkers).forEach(m=>m.remove());
