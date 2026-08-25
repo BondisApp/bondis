@@ -981,17 +981,36 @@ function busIcon(line, source, selected) {
 }
 
 // v14: a partir de este zoom, cada colectivo muestra su número sobre el marcador
-const LABEL_MIN_ZOOM = 13;
+const LABEL_MIN_ZOOM      = 13;
+// Tope de seguridad: con toda la flota de CABA (miles de colectivos), poner una
+// etiqueta permanente a cada uno tildaba el mapa. Por eso solo se etiquetan los
+// que están DENTRO de la pantalla actual, y si aun así son demasiados, se apagan
+// todas hasta que el usuario acerque más el zoom.
+const MAX_VISIBLE_LABELS  = 150;
 
-// Prende/apaga las etiquetas de número según el zoom actual, sin recrear los marcadores
+// Prende/apaga las etiquetas de número según zoom + qué hay realmente en pantalla,
+// sin recrear los marcadores
 function refreshMarkerLabels() {
-  const showLabels = map.getZoom() >= LABEL_MIN_ZOOM;
+  const zoom = map.getZoom();
+  let showLabels = zoom >= LABEL_MIN_ZOOM;
+  let bounds = null;
+
+  if (showLabels) {
+    bounds = map.getBounds();
+    let visibleCount = 0;
+    for (const m of Object.values(markers)) {
+      if (m._pubLabel && bounds.contains(m.getLatLng())) visibleCount++;
+      if (visibleCount > MAX_VISIBLE_LABELS) { showLabels = false; break; }
+    }
+  }
+
   Object.entries(markers).forEach(([id, m]) => {
     if (id === String(selectedId) || !m._pubLabel) return;
-    if (showLabels && !m._labelBound) {
+    const inView = showLabels && bounds.contains(m.getLatLng());
+    if (inView && !m._labelBound) {
       m.bindTooltip(m._pubLabel, { permanent:true, direction:'center', className:'bus-num-label', interactive:false });
       m._labelBound = true;
-    } else if (!showLabels && m._labelBound) {
+    } else if (!inView && m._labelBound) {
       const branchTxt = m._branchCode ? ` · Ramal ${m._branchCode}` : '';
       m.bindTooltip(`Línea ${m._pubLabel}${branchTxt}`, { permanent:false, direction:'top' });
       m._labelBound = false;
@@ -1213,17 +1232,14 @@ function updateMap() {
         markers[idStr]._branchCode = v.branchCode || '';
       } else {
         if (markers[idStr]) { markers[idStr].remove(); delete markers[idStr]; }
-        // v14: número visible sobre el marcador desde LABEL_MIN_ZOOM en adelante
-        const showLabel   = zoom >= LABEL_MIN_ZOOM;
+        // v14: el número fijo lo prende/apaga refreshMarkerLabels() según zoom + pantalla
         const tooltipText = v.branchCode ? `Línea ${pub} · Ramal ${v.branchCode}` : `Línea ${pub}`;
         const m = L.circleMarker([lat, lng], opts)
           .addTo(map)
-          .bindTooltip(showLabel ? pub : tooltipText, showLabel
-            ? { permanent:true, direction:'center', className:'bus-num-label', interactive:false }
-            : { permanent:false, direction:'top' });
+          .bindTooltip(tooltipText, { permanent:false, direction:'top' });
         m._pubLabel   = pub;
         m._branchCode = v.branchCode || '';
-        m._labelBound = showLabel;
+        m._labelBound = false;
         m.on('click', () => selectVehicle(idStr));
         markers[idStr] = m;
       }
@@ -1233,6 +1249,7 @@ function updateMap() {
     }
   });
 
+  refreshMarkerLabels();
   updateSidebar(filtered);
   updateStats(filtered);
 }
@@ -1378,6 +1395,7 @@ map.on('moveend', () => {
     document.getElementById('stops-label').textContent = 'Ocultar paradas';
   }
   loadStopsInView();
+  refreshMarkerLabels(); // v14: qué colectivo etiquetar depende de qué hay en pantalla
   // Actualizar chips con las líneas visibles en el área actual
   chipsBuilt = false;
   buildChips();
