@@ -69,23 +69,29 @@ function parseRoute(rawId) {
   // Quitar ceros iniciales: "0140C" → "140C"
   const sinCeros = s.replace(/^0+(?=\d)/, '');
 
-  // Separar número del sufijo de ramal
-  // Patrones que maneja la API GCBA:
-  //   "140C"   → número: 140, ramal: C
-  //   "228F-1" → número: 228, ramal: F-1
-  //   "622R2"  → número: 622, ramal: R2
-  //   "371D"   → número: 371, ramal: D
-  //   "59"     → número: 59,  ramal: (vacío)
-  const match = sinCeros.match(/^(\d+)([A-Z][\w-]*)$/i);
+  // route_short_name de la API GCBA NO es consistente: a veces viene limpio
+  // ("140C", "622R2") pero muchas veces trae texto pegado con espacio
+  // ("101 Barrio Samoré", "110 1 Nazca", "31 Expreso", "9 1"). Antes, esos
+  // casos con espacio no matcheaban el patrón estricto y se mostraba el
+  // string completo como si fuera el número — de ahí salían números "raros".
+  // Ahora: el número público es SIEMPRE el entero inicial (lo único que el
+  // vecino ve pintado en el colectivo); todo lo que sigue —letra de ramal o
+  // texto descriptivo— se guarda como ramal/subtítulo chico.
+  //   "140C"              → número: 140,  ramal: C
+  //   "228F-1"            → número: 228,  ramal: F-1
+  //   "101 Barrio Samoré" → número: 101,  ramal: BARRIO SAMOR (recortado)
+  //   "9 1"               → número: 9,    ramal: 1
+  //   "59"                → número: 59,   ramal: (vacío)
+  const match = sinCeros.match(/^(\d+)\s*(.*)$/);
 
   if (match) {
     return {
       publicNumber: match[1],
-      branchCode:   match[2].toUpperCase()
+      branchCode:   match[2].trim().toUpperCase().slice(0, 12)
     };
   }
 
-  // Sin sufijo alfabético → ya es número público
+  // No arranca con número (código raro tipo "R333/9") → mostrar tal cual
   return { publicNumber: sinCeros || s, branchCode: '' };
 }
 
@@ -191,7 +197,11 @@ async function fetchGCBA() {
         speed:         parseFloat(e.speed) || 0,
         timestamp:     e.timestamp || Date.now() / 1000,
         status:        parseFloat(e.speed) > 0 ? 'IN_TRANSIT_TO' : 'STOPPED_AT',
-        trip_id:       e.trip_id ? String(e.trip_id) : null
+        // La API GCBA manda este campo como "tip_id" (typo real de ellos, sin la
+        // "r"), no "trip_id". Por eso el snap-to-road estaba siempre en 0 — nunca
+        // encontraba trip_id y todos los colectivos quedaban con su posición GPS
+        // cruda, sin corregir contra la calle real.
+        trip_id:       String(e.tip_id || e.trip_id || '') || null
       });
     });
 
@@ -509,7 +519,8 @@ async function loadGTFS() {
     if (fs.existsSync(shapesFile)) {
       console.log('[GTFS] Cargando shapes.txt...');
       await parseFileLines(shapesFile, parseShapeLine, true);
-      console.log(`[GTFS] ${shapeStore.size} shapes cargados`);
+      sortShapesBySequence();
+      console.log(`[GTFS] ${shapeStore.size} shapes cargados (ordenados por secuencia real)`);
     }
     tripShapeMap.forEach((shapeId, tripId) => {
       const routeId = tripRouteMap.get(tripId);
@@ -582,9 +593,20 @@ function parseShapeLine(line, headers) {
   const shapeId = cols[headers.indexOf('shape_id')];
   const lat     = parseFloat(cols[headers.indexOf('shape_pt_lat')]);
   const lng     = parseFloat(cols[headers.indexOf('shape_pt_lon')]);
+  const seq     = parseInt(cols[headers.indexOf('shape_pt_sequence')], 10);
   if (!shapeId || isNaN(lat) || isNaN(lng)) return;
   if (!shapeStore.has(shapeId)) shapeStore.set(shapeId, []);
-  shapeStore.get(shapeId).push({ lat, lng });
+  // Guardamos también el número de secuencia real: shapes.txt NO viene ordenado
+  // por shape_id+sequence (para una misma línea trae primero el tramo final del
+  // recorrido y mucho más adelante en el archivo el tramo inicial). Si se arma el
+  // camino en el orden en que aparecen las filas, quedan saltos absurdos de una
+  // punta a la otra y el snap-to-road se rompe casi siempre.
+  shapeStore.get(shapeId).push({ lat, lng, seq: isNaN(seq) ? 0 : seq });
+}
+
+// Ordena cada shape por su secuencia real una vez terminó de cargar shapes.txt
+function sortShapesBySequence() {
+  shapeStore.forEach(points => points.sort((a, b) => a.seq - b.seq));
 }
 
 function buildStopShapesIndex() {
@@ -759,13 +781,13 @@ function projectToSegment(pLat, pLng, aLat, aLng, bLat, bLng) {
  * Devuelve { lat, lng, snapped, snapDist } — coords corregidas + metadata.
  */
 function snapToShape(rawLat, rawLng, tripId) {
-  if (!gtfsLoaded || !tripId) return { lat: rawLat, lng: rawLng, snapped: false };
+  if (!gtfsLoaded || !tripId) return { lat: rawLat, lng: rawLng, snapped: false, reason: 'no-gtfs-or-trip' };
 
   const shapeId = tripShapeMap.get(tripId);
-  if (!shapeId) return { lat: rawLat, lng: rawLng, snapped: false };
+  if (!shapeId) return { lat: rawLat, lng: rawLng, snapped: false, reason: 'no-shapeid-for-trip' };
 
   const shape = shapeStore.get(shapeId);
-  if (!shape || shape.length < 2) return { lat: rawLat, lng: rawLng, snapped: false };
+  if (!shape || shape.length < 2) return { lat: rawLat, lng: rawLng, snapped: false, reason: 'no-shape-geometry' };
 
   // Paso 1: encontrar el punto más cercano del shape para acotar la búsqueda
   let nearestIdx  = 0;
@@ -778,7 +800,7 @@ function snapToShape(rawLat, rawLng, tripId) {
   // Rechazo rápido: si el punto más cercano del shape está muy lejos, no hacer snap
   // (trip_id incorrecto, colectivo fuera de servicio, etc.)
   if (nearestDist > SNAP_MAX_DIST_M * 2.5) {
-    return { lat: rawLat, lng: rawLng, snapped: false };
+    return { lat: rawLat, lng: rawLng, snapped: false, reason: 'too-far-coarse' };
   }
 
   // Paso 2: evaluar segmentos en la ventana alrededor del punto más cercano
@@ -803,7 +825,7 @@ function snapToShape(rawLat, rawLng, tripId) {
   }
 
   if (bestDist > SNAP_MAX_DIST_M) {
-    return { lat: rawLat, lng: rawLng, snapped: false };
+    return { lat: rawLat, lng: rawLng, snapped: false, reason: 'too-far-fine' };
   }
 
   return { lat: bestLat, lng: bestLng, snapped: true, snapDist: Math.round(bestDist) };
@@ -820,6 +842,7 @@ function applySnapToRoad(fusedList) {
   if (!gtfsLoaded) return fusedList;
 
   let snapped = 0, skipped = 0, noTrip = 0;
+  const reasonCounts = {}; // resumen de por qué no se pudo snappear (diagnóstico liviano)
 
   fusedList.forEach(v => {
     // Solo API GCBA — los GPS propios ya son precisos
@@ -835,6 +858,8 @@ function applySnapToRoad(fusedList) {
       snapped++;
     } else {
       skipped++;
+      const key = result.reason || '?';
+      reasonCounts[key] = (reasonCounts[key] || 0) + 1;
     }
   });
 
@@ -842,6 +867,7 @@ function applySnapToRoad(fusedList) {
   if (_snapCycle % 20 === 1) {
     const total = snapped + skipped + noTrip;
     console.log(`[Snap] ${snapped}/${total} snapped | ${noTrip} sin trip_id | ${skipped} descartados`);
+    if (skipped > 0) console.log('[Snap] motivos de descarte:', JSON.stringify(reasonCounts));
   }
 
   return fusedList;
