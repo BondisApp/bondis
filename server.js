@@ -777,15 +777,10 @@ function projectToSegment(pLat, pLng, aLat, aLng, bLat, bLng) {
 }
 
 /**
- * Snappea un punto GPS a su shape GTFS.
+ * Snappea un punto GPS contra UN shape puntual (por su shapeId).
  * Devuelve { lat, lng, snapped, snapDist } — coords corregidas + metadata.
  */
-function snapToShape(rawLat, rawLng, tripId) {
-  if (!gtfsLoaded || !tripId) return { lat: rawLat, lng: rawLng, snapped: false, reason: 'no-gtfs-or-trip' };
-
-  const shapeId = tripShapeMap.get(tripId);
-  if (!shapeId) return { lat: rawLat, lng: rawLng, snapped: false, reason: 'no-shapeid-for-trip' };
-
+function snapToShapeById(rawLat, rawLng, shapeId) {
   const shape = shapeStore.get(shapeId);
   if (!shape || shape.length < 2) return { lat: rawLat, lng: rawLng, snapped: false, reason: 'no-shape-geometry' };
 
@@ -798,7 +793,6 @@ function snapToShape(rawLat, rawLng, tripId) {
   }
 
   // Rechazo rápido: si el punto más cercano del shape está muy lejos, no hacer snap
-  // (trip_id incorrecto, colectivo fuera de servicio, etc.)
   if (nearestDist > SNAP_MAX_DIST_M * 2.5) {
     return { lat: rawLat, lng: rawLng, snapped: false, reason: 'too-far-coarse' };
   }
@@ -831,6 +825,42 @@ function snapToShape(rawLat, rawLng, tripId) {
   return { lat: bestLat, lng: bestLng, snapped: true, snapDist: Math.round(bestDist) };
 }
 
+/**
+ * Snappea un vehículo probando primero su trip_id exacto y, si falla, contra
+ * TODOS los shapes conocidos de su línea (publicNumber).
+ *
+ * Por qué: el GTFS estático de GCBA está desactualizado (ver comentario en
+ * fetchGCBA sobre "tip_id") — el trip_id puntual que manda la API en vivo casi
+ * nunca coincide con el trip_id real de nuestro archivo viejo. Pero el NÚMERO
+ * de línea es mucho más estable en el tiempo que un trip específico, así que
+ * probar contra todos los recorridos conocidos de esa línea da muchas más
+ * chances de encontrar el correcto, aunque el trip exacto ya no exista.
+ */
+function snapVehicle(rawLat, rawLng, tripId, publicNumber) {
+  if (!gtfsLoaded) return { lat: rawLat, lng: rawLng, snapped: false, reason: 'no-gtfs' };
+
+  if (tripId) {
+    const shapeId = tripShapeMap.get(tripId);
+    if (shapeId) {
+      const result = snapToShapeById(rawLat, rawLng, shapeId);
+      if (result.snapped) return result;
+    }
+  }
+
+  const candidates = routeShapes.get(publicNumber);
+  if (!candidates || candidates.size === 0) {
+    return { lat: rawLat, lng: rawLng, snapped: false, reason: 'no-route-candidates' };
+  }
+
+  let best = null;
+  for (const shapeId of candidates) {
+    const result = snapToShapeById(rawLat, rawLng, shapeId);
+    if (result.snapped && (!best || result.snapDist < best.snapDist)) best = result;
+  }
+
+  return best || { lat: rawLat, lng: rawLng, snapped: false, reason: 'too-far-fine' };
+}
+
 // Contador de diagnóstico snap (log cada 20 ciclos)
 let _snapCycle = 0;
 
@@ -847,9 +877,9 @@ function applySnapToRoad(fusedList) {
   fusedList.forEach(v => {
     // Solo API GCBA — los GPS propios ya son precisos
     if (v.data_source !== 'API_GCBA') return;
-    if (!v.trip_id) { noTrip++; return; }
+    if (!v.trip_id) noTrip++; // solo estadística — igual se intenta por línea
 
-    const result = snapToShape(v.posicion.latitud, v.posicion.longitud, v.trip_id);
+    const result = snapVehicle(v.posicion.latitud, v.posicion.longitud, v.trip_id, v.publicNumber);
 
     if (result.snapped) {
       v.posicion.latitud  = result.lat;
