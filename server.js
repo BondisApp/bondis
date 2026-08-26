@@ -549,9 +549,13 @@ async function loadGTFS() {
       if (!routeShapes.has(publicNumber)) routeShapes.set(publicNumber, new Set());
       routeShapes.get(publicNumber).add(shapeId);
     });
+    // loadOSMRoutes() va ANTES de indexar: suma recorridos de OpenStreetMap
+    // a shapeStore/routeShapes, así el índice parada→líneas también usa esos
+    // recorridos (más precisos) para saber qué líneas pasan por cada parada,
+    // no solo los del GTFS viejo de GCBA.
+    loadOSMRoutes();
     console.log('[GTFS] Indexando shapes por parada...');
     buildStopShapesIndex();
-    loadOSMRoutes();
     gtfsLoaded = true;
     console.log(`[GTFS] ✅ ${stopsStore.size} paradas listas`);
   } catch(err) {
@@ -628,19 +632,49 @@ function sortShapesBySequence() {
   shapeStore.forEach(points => points.sort((a, b) => a.seq - b.seq));
 }
 
+// Antes esto comparaba CADA punto de CADA recorrido contra las 43.201
+// paradas del sistema, una por una (~10 mil millones de comparaciones —
+// tardaba varios minutos en una máquina rápida, y muchísimo más en un
+// server con menos CPU como Railway). Ahora se arma primero una grilla:
+// cada parada se guarda en su "casillero" geográfico, y para cada punto
+// de un recorrido solo se revisan las paradas de los casilleros vecinos.
+const STOP_GRID_SIZE = 0.003; // ~330m — cubre la ventana de busqueda anterior
+
+function buildStopsGrid() {
+  const grid = new Map();
+  stopsStore.forEach((stop, stopId) => {
+    const key = Math.round(stop.lat / STOP_GRID_SIZE) + ',' + Math.round(stop.lng / STOP_GRID_SIZE);
+    if (!grid.has(key)) grid.set(key, []);
+    grid.get(key).push({ stop, stopId });
+  });
+  return grid;
+}
+
 function buildStopShapesIndex() {
   const SAMPLE = 3;
+  const grid = buildStopsGrid();
+
   shapeStore.forEach((points, shapeId) => {
     for (let i = 0; i < points.length; i += SAMPLE) {
       const pt = points[i];
-      stopsStore.forEach((stop, stopId) => {
-        if (Math.abs(pt.lat - stop.lat) > 0.002 || Math.abs(pt.lng - stop.lng) > 0.003) return;
-        const dist = haversine(pt.lat, pt.lng, stop.lat, stop.lng);
-        if (dist <= SHAPE_STOP_RADIUS_M) {
-          if (!stopShapes.has(stopId)) stopShapes.set(stopId, new Set());
-          stopShapes.get(stopId).add(shapeId);
+      const cellLat = Math.round(pt.lat / STOP_GRID_SIZE);
+      const cellLng = Math.round(pt.lng / STOP_GRID_SIZE);
+
+      // Revisar el casillero del punto y los 8 vecinos, por si una parada
+      // cae justo del otro lado del borde del casillero
+      for (let dLat = -1; dLat <= 1; dLat++) {
+        for (let dLng = -1; dLng <= 1; dLng++) {
+          const bucket = grid.get((cellLat + dLat) + ',' + (cellLng + dLng));
+          if (!bucket) continue;
+          bucket.forEach(({ stop, stopId }) => {
+            const dist = haversine(pt.lat, pt.lng, stop.lat, stop.lng);
+            if (dist <= SHAPE_STOP_RADIUS_M) {
+              if (!stopShapes.has(stopId)) stopShapes.set(stopId, new Set());
+              stopShapes.get(stopId).add(shapeId);
+            }
+          });
         }
-      });
+      }
     }
   });
 }
