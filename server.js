@@ -27,6 +27,8 @@ const axios      = require('axios');
 const { WebSocketServer } = require('ws');
 const cron       = require('node-cron');
 const http       = require('http');
+const { parseRoute } = require('./lib/parseRoute');
+const { haversine }  = require('./lib/geo');
 
 const app    = express();
 const server = http.createServer(app);
@@ -45,55 +47,6 @@ app.use(express.json());
 const gpsStore  = new Map();
 const gcbaStore = new Map();
 let   fusedStore = [];
-
-// ══════════════════════════════════════════════════════
-// MAPEO NÚMEROS PÚBLICOS  ← NUEVO EN v10
-//
-// La API GCBA manda códigos internos: "140C", "228F-1", "622R2"
-// El usuario ve en el colectivo físico solo el número: 140, 228, 622
-// El ramal (C, F-1, R2) es info interna — lo mostramos como subtexto pequeño
-//
-// Esta función devuelve:
-//   publicNumber: "140"   → número visible en el colectivo
-//   branchCode:  "C"      → ramal interno (puede estar vacío)
-// ══════════════════════════════════════════════════════
-function parseRoute(rawId) {
-  if (!rawId || rawId === '?') return { publicNumber: rawId || '?', branchCode: '' };
-
-  const s = String(rawId).trim();
-
-  // Casos especiales: trenes y subtes
-  if (/^RTr/i.test(s)) return { publicNumber: 'Tren', branchCode: '' };
-  if (/^RM/i.test(s))  return { publicNumber: 'Metro', branchCode: s.replace(/^RM/i,'').replace(/^0+/,'') };
-
-  // Quitar ceros iniciales: "0140C" → "140C"
-  const sinCeros = s.replace(/^0+(?=\d)/, '');
-
-  // route_short_name de la API GCBA NO es consistente: a veces viene limpio
-  // ("140C", "622R2") pero muchas veces trae texto pegado con espacio
-  // ("101 Barrio Samoré", "110 1 Nazca", "31 Expreso", "9 1"). Antes, esos
-  // casos con espacio no matcheaban el patrón estricto y se mostraba el
-  // string completo como si fuera el número — de ahí salían números "raros".
-  // Ahora: el número público es SIEMPRE el entero inicial (lo único que el
-  // vecino ve pintado en el colectivo); todo lo que sigue —letra de ramal o
-  // texto descriptivo— se guarda como ramal/subtítulo chico.
-  //   "140C"              → número: 140,  ramal: C
-  //   "228F-1"            → número: 228,  ramal: F-1
-  //   "101 Barrio Samoré" → número: 101,  ramal: BARRIO SAMOR (recortado)
-  //   "9 1"               → número: 9,    ramal: 1
-  //   "59"                → número: 59,   ramal: (vacío)
-  const match = sinCeros.match(/^(\d+)\s*(.*)$/);
-
-  if (match) {
-    return {
-      publicNumber: match[1],
-      branchCode:   match[2].trim().toUpperCase().slice(0, 12)
-    };
-  }
-
-  // No arranca con número (código raro tipo "R333/9") → mostrar tal cual
-  return { publicNumber: sinCeros || s, branchCode: '' };
-}
 
 // ══════════════════════════════════════════════════════
 // LOGGING DIAGNÓSTICO  ← NUEVO EN v10
@@ -474,6 +427,38 @@ const stopShapes   = new Map();
 const routeShapes  = new Map();
 const SHAPE_STOP_RADIUS_M = 40;
 
+// ══════════════════════════════════════════════════════
+// RECORRIDOS DE OPENSTREETMAP  ← alternativa al GTFS de GCBA
+//
+// El GTFS oficial de GCBA está congelado desde 2019/2021 (el propio
+// gobierno lo tiene "suspendido, en revisión"). OSM lo mantiene la
+// comunidad y está mucho más al día. Se suman estos recorridos como
+// candidatos EXTRA en routeShapes/shapeStore, usando el mismo formato
+// que ya usa el snap-to-road — no hace falta tocar snapVehicle().
+//
+// El archivo osm-routes.json se genera con:
+//   node scripts/fetch-osm-routes.js
+// ══════════════════════════════════════════════════════
+function loadOSMRoutes() {
+  const osmFile = path.join(__dirname, 'osm-routes.json');
+  if (!fs.existsSync(osmFile)) {
+    console.log('[OSM] osm-routes.json no encontrado — correr "node scripts/fetch-osm-routes.js" para generarlo');
+    return;
+  }
+  try {
+    const data = JSON.parse(fs.readFileSync(osmFile, 'utf8'));
+    (data.routes || []).forEach(r => {
+      const shapeId = 'osm-' + r.osmId;
+      shapeStore.set(shapeId, r.points.map(p => ({ lat: p[0], lng: p[1], seq: 0 })));
+      if (!routeShapes.has(r.publicNumber)) routeShapes.set(r.publicNumber, new Set());
+      routeShapes.get(r.publicNumber).add(shapeId);
+    });
+    console.log(`[OSM] ${data.routes.length} recorridos de OpenStreetMap cargados (generados ${data.generatedAt})`);
+  } catch (err) {
+    console.error('[OSM] Error leyendo osm-routes.json:', err.message);
+  }
+}
+
 async function loadGTFS() {
   const clientId     = process.env.GCBA_CLIENT_ID;
   const clientSecret = process.env.GCBA_CLIENT_SECRET;
@@ -533,6 +518,7 @@ async function loadGTFS() {
     });
     console.log('[GTFS] Indexando shapes por parada...');
     buildStopShapesIndex();
+    loadOSMRoutes();
     gtfsLoaded = true;
     console.log(`[GTFS] ✅ ${stopsStore.size} paradas listas`);
   } catch(err) {
@@ -737,14 +723,6 @@ app.get('/eta', (req, res) => {
 });
 
 
-function haversine(lat1, lng1, lat2, lng2) {
-  const R    = 6371000;
-  const dLat = (lat2 - lat1) * Math.PI / 180;
-  const dLng = (lng2 - lng1) * Math.PI / 180;
-  const a    = Math.sin(dLat/2)**2 +
-               Math.cos(lat1 * Math.PI/180) * Math.cos(lat2 * Math.PI/180) * Math.sin(dLng/2)**2;
-  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-}
 
 // ══════════════════════════════════════════════════════
 // SNAP-TO-ROAD — proyección GPS → shape GTFS
