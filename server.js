@@ -73,8 +73,26 @@ function logVehicleDiag(rawEntity, index) {
 
 // ══════════════════════════════════════════════════════
 // 1. INGESTA GPS PROPIO
+//
+// Protegido con una clave compartida (GPS_SHARED_SECRET en .env): cada
+// dispositivo Teltonika debe mandarla en el header X-Gps-Key. Sin esto,
+// cualquiera que supiera la URL podía mandar posiciones falsas haciéndose
+// pasar por un colectivo con confiabilidad 100%.
+//
+// Si GPS_SHARED_SECRET no está configurada (desarrollo/pruebas locales),
+// el endpoint queda abierto como antes — se activa solo al configurar la
+// variable de entorno, sin tocar código, cuando haya hardware real en la calle.
 // ══════════════════════════════════════════════════════
+if (!process.env.GPS_SHARED_SECRET) {
+  console.warn('[GPS] GPS_SHARED_SECRET no configurada — /gps queda sin protección. No usar así con hardware real.');
+}
+
 app.post('/gps', (req, res) => {
+  const requiredKey = process.env.GPS_SHARED_SECRET;
+  if (requiredKey && req.headers['x-gps-key'] !== requiredKey) {
+    return res.status(401).json({ error: 'No autorizado' });
+  }
+
   const { device_id, vehicle_id, id_ruta, matricula, lat, lng, bearing, speed, odometer } = req.body;
 
   if (!vehicle_id || !lat || !lng) {
@@ -203,7 +221,22 @@ function loadGCBAMockData() {
 // ══════════════════════════════════════════════════════
 // 3. DATA FUSION ENGINE
 // ══════════════════════════════════════════════════════
+// Si un dispositivo deja de mandar señal por mucho tiempo (se rompió, se
+// descargó, perdió cobertura), antes ese colectivo quedaba "congelado" en
+// el mapa para siempre — nunca volvía a usar la API de GCBA como respaldo.
+// Pasados 15 minutos sin señal, se libera para que vuelva a mostrarse con
+// GCBA mientras se repara el equipo.
+const GPS_STALE_REMOVE_SEC = 15 * 60;
+
+function purgeStaleGPS() {
+  const now = Date.now() / 1000;
+  gpsStore.forEach((gps, id) => {
+    if (now - gps.timestamp > GPS_STALE_REMOVE_SEC) gpsStore.delete(id);
+  });
+}
+
 function fuseData() {
+  purgeStaleGPS();
   const now = Date.now() / 1000;
   const GPS_TIMEOUT = parseInt(process.env.GPS_TIMEOUT) / 1000 || 120;
   const result = [];
