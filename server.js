@@ -448,7 +448,7 @@ function broadcastUpdate() {
 // ══════════════════════════════════════════════════════
 const https    = require('https');
 const fs       = require('fs');
-const { execSync } = require('child_process');
+const AdmZip   = require('adm-zip');
 
 let stopsStore     = new Map();
 let stopTimesStore = new Map();
@@ -512,11 +512,13 @@ async function loadGTFS() {
       const zipPath = path.join(__dirname, 'gtfs.zip');
       await downloadFile(url, zipPath);
       if (!fs.existsSync(gtfsDir)) fs.mkdirSync(gtfsDir);
-      try {
-        execSync(`powershell -command "Expand-Archive -Force '${zipPath}' '${gtfsDir}'"`, { timeout: 30000 });
-      } catch(e) {
-        execSync(`tar -xf "${zipPath}" -C "${gtfsDir}"`, { timeout: 30000 });
-      }
+      // Antes se usaba "tar" (Linux) o PowerShell (Windows) para descomprimir —
+      // "tar" no sabe abrir archivos .zip (es un formato distinto), así que en
+      // Railway (Linux) esto fallaba SIEMPRE que hacía falta una descarga
+      // nueva, y las paradas/ETA quedaban rotas para siempre en ese deploy.
+      // AdmZip descomprime en JS puro, igual en Windows/Linux/Mac.
+      console.log('[GTFS] Descomprimiendo...');
+      new AdmZip(zipPath).extractAllTo(gtfsDir, true);
     }
     // Cargar routes.txt primero para mapear route_id → route_short_name
     if (fs.existsSync(routesFile)) {

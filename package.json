@@ -9,6 +9,7 @@
     "fetch-osm-routes": "node scripts/fetch-osm-routes.js"
   },
   "dependencies": {
+    "adm-zip": "^0.6.0",
     "axios": "^1.6.0",
     "cors": "^2.8.5",
     "dotenv": "^16.3.1",
