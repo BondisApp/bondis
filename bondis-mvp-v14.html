@@ -23,6 +23,23 @@
   --blue:#2979ff;
   --text:#e8e8f0;
   --text-dim:#5a5a6e;
+  --marker-ring:#fff;
+}
+/* v14: MODO DÍA — misma app, paleta clara. Se activa seteando
+   data-theme="light" en <html> (ver toggleMapStyle en el script). */
+:root[data-theme="light"] {
+  --bg:#eef0f4;
+  --bg2:#ffffff;
+  --surface:#ffffff;
+  --surface2:#e7e9f0;
+  --border:#d7d9e2;
+  --yellow:#b8860b;
+  --green:#00a854;
+  --red:#d32f2f;
+  --blue:#2979ff;
+  --text:#1a1a1e;
+  --text-dim:#6b6b78;
+  --marker-ring:#1a1a1e;
 }
 *,*::before,*::after{margin:0;padding:0;box-sizing:border-box}
 body{font-family:'Space Mono',monospace;background:var(--bg);color:var(--text);height:100vh;overflow:hidden;display:flex;flex-direction:column}
@@ -493,7 +510,7 @@ body{font-family:'Space Mono',monospace;background:var(--bg);color:var(--text);h
 }
 
 /* USER LOCATION */
-.user-marker{width:16px;height:16px;border-radius:50%;background:var(--blue);border:2px solid #fff;box-shadow:0 0 0 4px rgba(41,121,255,.25)}
+.user-marker{width:16px;height:16px;border-radius:50%;background:var(--blue);border:2px solid var(--marker-ring);box-shadow:0 0 0 4px rgba(41,121,255,.25)}
 
 /* Tooltip */
 .leaflet-tooltip{background:var(--surface) !important;border:1px solid var(--border) !important;color:var(--text) !important;font-family:'Space Mono',monospace !important;font-size:10px !important;letter-spacing:1px !important;padding:4px 8px !important;border-radius:2px !important;box-shadow:0 2px 8px rgba(0,0,0,.4) !important}
@@ -504,7 +521,7 @@ body{font-family:'Space Mono',monospace;background:var(--bg);color:var(--text);h
 /* v14: número de línea siempre visible sobre el marcador (desde LABEL_MIN_ZOOM).
    Es una mini-etiqueta con flechita, igual que el resto de los tooltips de la
    app — así queda claramente "pegada" al punto del colectivo, no flotando suelta. */
-.bus-num-label{background:var(--surface) !important;border:1px solid var(--border) !important;border-radius:3px !important;box-shadow:0 1px 5px rgba(0,0,0,.5) !important;padding:1px 6px !important;margin:0 !important;color:#fff !important;font-family:'Bebas Neue',sans-serif !important;font-size:11px !important;font-weight:700;letter-spacing:.5px;pointer-events:none}
+.bus-num-label{background:var(--surface) !important;border:1px solid var(--border) !important;border-radius:3px !important;box-shadow:0 1px 5px rgba(0,0,0,.5) !important;padding:1px 6px !important;margin:0 !important;color:var(--text) !important;font-family:'Bebas Neue',sans-serif !important;font-size:11px !important;font-weight:700;letter-spacing:.5px;pointer-events:none}
 .bus-num-label:before{border-top-color:var(--border) !important}
 
 /* GEO PROMPT */
@@ -915,12 +932,15 @@ const map = L.map('map', {
 });
 
 // ── ESTILO DE MAPA — v14: cambiar acá sin tocar nada más ──
-// 'dark' = CartoDB Dark Matter con nombres de calles (recomendado)
+// 'dark'          = CartoDB Dark Matter con nombres de calles (recomendado)
 // 'dark_nolabels' = mismo estilo pero sin texto, más minimalista
+// 'light'         = modo día — mapa claro + toda la interfaz cambia a paleta clara
 const MAP_STYLES = {
-  dark:          { url:'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',     attribution:'© CartoDB © OpenStreetMap' },
-  dark_nolabels: { url:'https://{s}.basemaps.cartocdn.com/dark_nolabels/{z}/{x}/{y}{r}.png', attribution:'© CartoDB © OpenStreetMap' }
+  dark:          { url:'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',     attribution:'© CartoDB © OpenStreetMap', theme:'dark'  },
+  dark_nolabels: { url:'https://{s}.basemaps.cartocdn.com/dark_nolabels/{z}/{x}/{y}{r}.png', attribution:'© CartoDB © OpenStreetMap', theme:'dark'  },
+  light:         { url:'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png',     attribution:'© CartoDB © OpenStreetMap', theme:'light' }
 };
+const MAP_STYLE_ORDER = ['dark', 'dark_nolabels', 'light'];
 const MAP_STYLE = 'dark'; // estilo por defecto la primera vez que alguien abre la app
 
 // v14: ahora hay un botón en la leyenda para cambiar de estilo en vivo — esto
@@ -928,6 +948,12 @@ const MAP_STYLE = 'dark'; // estilo por defecto la primera vez que alguien abre 
 let MAP_STYLE_CURRENT = localStorage.getItem('bondis_map_style') || MAP_STYLE;
 if (!MAP_STYLES[MAP_STYLE_CURRENT]) MAP_STYLE_CURRENT = MAP_STYLE;
 let currentTileLayer = null;
+
+const MAP_STYLE_LABELS = {
+  dark:          '🌙 Mapa: con nombres de calles',
+  dark_nolabels: '🌙 Mapa: sin nombres de calles',
+  light:         '☀️ Modo día'
+};
 
 function applyMapStyle(styleKey) {
   const style = MAP_STYLES[styleKey] || MAP_STYLES[MAP_STYLE];
@@ -939,7 +965,18 @@ function applyMapStyle(styleKey) {
   }).addTo(map);
   localStorage.setItem('bondis_map_style', styleKey);
 
-  const label = styleKey === 'dark_nolabels' ? 'Mapa: sin nombres de calles' : 'Mapa: con nombres de calles';
+  // El modo día cambia TODA la interfaz (sidebar, botones, paneles), no solo
+  // el mapa — se controla con este atributo, el resto lo resuelve el CSS.
+  document.documentElement.setAttribute('data-theme', style.theme);
+
+  // Las avenidas se ven en amarillo sobre fondo oscuro, pero un dorado más
+  // oscuro sobre fondo claro (el amarillo puro casi no se ve sobre blanco).
+  if (typeof avenidaLayers !== 'undefined') {
+    const avenidaColor = getComputedStyle(document.documentElement).getPropertyValue('--yellow').trim();
+    avenidaLayers.forEach(l => l.setStyle({ color: avenidaColor }));
+  }
+
+  const label = MAP_STYLE_LABELS[styleKey] || MAP_STYLE_LABELS.dark;
   ['mapstyle-toggle-label', 'mapstyle-toggle-label-mobile'].forEach(id => {
     const el = document.getElementById(id);
     if (el) el.textContent = label;
@@ -947,13 +984,13 @@ function applyMapStyle(styleKey) {
 }
 
 function toggleMapStyle() {
-  MAP_STYLE_CURRENT = MAP_STYLE_CURRENT === 'dark' ? 'dark_nolabels' : 'dark';
+  const idx = MAP_STYLE_ORDER.indexOf(MAP_STYLE_CURRENT);
+  MAP_STYLE_CURRENT = MAP_STYLE_ORDER[(idx + 1) % MAP_STYLE_ORDER.length];
   applyMapStyle(MAP_STYLE_CURRENT);
 }
 
-applyMapStyle(MAP_STYLE_CURRENT);
-
 // ── OVERLAY AVENIDAS CABA — v14: todas en amarillo, nunca desaparecen ──
+// (el color real se aplica en applyMapStyle() según el tema — ver más abajo)
 const AVENIDA_YELLOW = '#f5c800';
 const AVENIDAS = [
   { name:'Av. Corrientes',color:AVENIDA_YELLOW,w:2.5,coords:[[-34.6031,-58.4388],[-34.6032,-58.4200],[-34.6034,-58.4000],[-34.6037,-58.3850],[-34.6038,-58.3720],[-34.6036,-58.3622]]},
@@ -984,6 +1021,9 @@ AVENIDAS.forEach(av => {
   const pl = L.polyline(av.coords, { color:av.color, weight:av.w, opacity:0.55, smoothFactor:1, interactive:false }).addTo(map);
   avenidaLayers.push(pl);
 });
+
+// Recién ahora existen map + avenidaLayers — es seguro aplicar el estilo inicial
+applyMapStyle(MAP_STYLE_CURRENT);
 
 map.on('zoomend', () => {
   const z = map.getZoom();
