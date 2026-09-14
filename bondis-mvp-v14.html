@@ -935,10 +935,26 @@ const map = L.map('map', {
 // 'dark'          = CartoDB Dark Matter con nombres de calles (recomendado)
 // 'dark_nolabels' = mismo estilo pero sin texto, más minimalista
 // 'light'         = modo día — mapa claro + toda la interfaz cambia a paleta clara
+// v14: se cambió de CartoDB a ESRI — CartoDB empezó a pedir clave de API
+// de forma intermitente ("API KEY REQUIRED" tapando el mapa) y no hay forma
+// de anticipar cuándo pasa. ESRI es gratis, sin clave, y no tuvo ese problema
+// en las pruebas. Cada estilo trae 2 capas: el fondo (calles/manzanas) y una
+// capa transparente encima con los nombres — "sin nombres" solo usa la primera.
+const ESRI_BASE = 'https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/';
+const ESRI_ATTRIBUTION = 'Esri, HERE, Garmin, © OpenStreetMap contributors, comunidad GIS';
 const MAP_STYLES = {
-  dark:          { url:'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',     attribution:'© CartoDB © OpenStreetMap', theme:'dark'  },
-  dark_nolabels: { url:'https://{s}.basemaps.cartocdn.com/dark_nolabels/{z}/{x}/{y}{r}.png', attribution:'© CartoDB © OpenStreetMap', theme:'dark'  },
-  light:         { url:'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png',     attribution:'© CartoDB © OpenStreetMap', theme:'light' }
+  dark: {
+    layers: [ESRI_BASE + 'World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}', ESRI_BASE + 'World_Dark_Gray_Reference/MapServer/tile/{z}/{y}/{x}'],
+    attribution: ESRI_ATTRIBUTION, theme: 'dark'
+  },
+  dark_nolabels: {
+    layers: [ESRI_BASE + 'World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}'],
+    attribution: ESRI_ATTRIBUTION, theme: 'dark'
+  },
+  light: {
+    layers: [ESRI_BASE + 'World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}', ESRI_BASE + 'World_Light_Gray_Reference/MapServer/tile/{z}/{y}/{x}'],
+    attribution: ESRI_ATTRIBUTION, theme: 'light'
+  }
 };
 const MAP_STYLE_ORDER = ['dark', 'dark_nolabels', 'light'];
 const MAP_STYLE = 'dark'; // estilo por defecto la primera vez que alguien abre la app
@@ -947,7 +963,7 @@ const MAP_STYLE = 'dark'; // estilo por defecto la primera vez que alguien abre 
 // recuerda la elección del usuario entre visitas (localStorage)
 let MAP_STYLE_CURRENT = localStorage.getItem('bondis_map_style') || MAP_STYLE;
 if (!MAP_STYLES[MAP_STYLE_CURRENT]) MAP_STYLE_CURRENT = MAP_STYLE;
-let currentTileLayer = null;
+let currentTileLayers = [];
 
 const MAP_STYLE_LABELS = {
   dark:          '🌙 Mapa: con nombres de calles',
@@ -957,12 +973,11 @@ const MAP_STYLE_LABELS = {
 
 function applyMapStyle(styleKey) {
   const style = MAP_STYLES[styleKey] || MAP_STYLES[MAP_STYLE];
-  if (currentTileLayer) map.removeLayer(currentTileLayer);
-  currentTileLayer = L.tileLayer(style.url, {
-    maxZoom: 20,
-    subdomains: 'abcd',
-    attribution: style.attribution
-  }).addTo(map);
+  currentTileLayers.forEach(l => map.removeLayer(l));
+  currentTileLayers = style.layers.map((url, i) => L.tileLayer(url, {
+    maxZoom: 18,
+    attribution: i === 0 ? style.attribution : ''
+  }).addTo(map));
   localStorage.setItem('bondis_map_style', styleKey);
 
   // El modo día cambia TODA la interfaz (sidebar, botones, paneles), no solo
