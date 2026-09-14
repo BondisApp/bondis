@@ -972,13 +972,6 @@ function applyMapStyle(styleKey) {
   // el mapa — se controla con este atributo, el resto lo resuelve el CSS.
   document.documentElement.setAttribute('data-theme', style.theme);
 
-  // Las avenidas se ven en amarillo sobre fondo oscuro, pero un dorado más
-  // oscuro sobre fondo claro (el amarillo puro casi no se ve sobre blanco).
-  if (typeof avenidaLayers !== 'undefined') {
-    const avenidaColor = getComputedStyle(document.documentElement).getPropertyValue('--yellow').trim();
-    avenidaLayers.forEach(l => l.setStyle({ color: avenidaColor }));
-  }
-
   const label = MAP_STYLE_LABELS[styleKey] || MAP_STYLE_LABELS.dark;
   ['mapstyle-toggle-label', 'mapstyle-toggle-label-mobile'].forEach(id => {
     const el = document.getElementById(id);
@@ -992,45 +985,10 @@ function toggleMapStyle() {
   applyMapStyle(MAP_STYLE_CURRENT);
 }
 
-// ── OVERLAY AVENIDAS CABA — v14: todas en amarillo, nunca desaparecen ──
-// (el color real se aplica en applyMapStyle() según el tema — ver más abajo)
-const AVENIDA_YELLOW = '#f5c800';
-const AVENIDAS = [
-  { name:'Av. Corrientes',color:AVENIDA_YELLOW,w:2.5,coords:[[-34.6031,-58.4388],[-34.6032,-58.4200],[-34.6034,-58.4000],[-34.6037,-58.3850],[-34.6038,-58.3720],[-34.6036,-58.3622]]},
-  { name:'Av. Rivadavia',color:AVENIDA_YELLOW,w:2.5,coords:[[-34.6180,-58.4980],[-34.6150,-58.4700],[-34.6120,-58.4400],[-34.6098,-58.4100],[-34.6082,-58.3850],[-34.6070,-58.3622]]},
-  { name:'Av. Santa Fe',color:AVENIDA_YELLOW,w:2.5,coords:[[-34.5955,-58.4480],[-34.5920,-58.4200],[-34.5893,-58.3950],[-34.5870,-58.3760],[-34.5862,-58.3622]]},
-  { name:'Av. 9 de Julio',color:AVENIDA_YELLOW,w:3.5,coords:[[-34.5980,-58.3816],[-34.6037,-58.3816],[-34.6100,-58.3816],[-34.6160,-58.3815],[-34.6230,-58.3812]]},
-  { name:'Av. del Libertador',color:AVENIDA_YELLOW,w:2.5,coords:[[-34.5440,-58.4830],[-34.5520,-58.4620],[-34.5620,-58.4420],[-34.5720,-58.4220],[-34.5810,-58.4050],[-34.5870,-58.3816]]},
-  { name:'Av. Cabildo',color:AVENIDA_YELLOW,w:2.0,coords:[[-34.5280,-58.4820],[-34.5380,-58.4740],[-34.5480,-58.4660],[-34.5580,-58.4580],[-34.5680,-58.4500],[-34.5760,-58.4440]]},
-  { name:'Av. Callao/Entre Ríos',color:AVENIDA_YELLOW,w:1.8,coords:[[-34.5860,-58.3926],[-34.5980,-58.3926],[-34.6100,-58.3926],[-34.6200,-58.3930],[-34.6300,-58.3936]]},
-  { name:'Av. Pueyrredón',color:AVENIDA_YELLOW,w:1.8,coords:[[-34.5760,-58.3975],[-34.5900,-58.3973],[-34.6050,-58.3972],[-34.6150,-58.3972]]},
-  { name:'Av. Belgrano',color:AVENIDA_YELLOW,w:1.8,coords:[[-34.6153,-58.4380],[-34.6155,-58.4100],[-34.6155,-58.3850],[-34.6153,-58.3622]]},
-  { name:'Av. Independencia',color:AVENIDA_YELLOW,w:1.8,coords:[[-34.6228,-58.4380],[-34.6230,-58.4100],[-34.6232,-58.3850],[-34.6230,-58.3622]]},
-  { name:'Av. San Juan',color:AVENIDA_YELLOW,w:1.8,coords:[[-34.6288,-58.4380],[-34.6290,-58.4100],[-34.6291,-58.3850],[-34.6290,-58.3622]]},
-  { name:'Av. Juan B. Justo',color:AVENIDA_YELLOW,w:2.0,coords:[[-34.5720,-58.4710],[-34.5820,-58.4610],[-34.5920,-58.4510],[-34.6020,-58.4400],[-34.6120,-58.4310],[-34.6200,-58.4240]]},
-  { name:'Av. Boedo',color:AVENIDA_YELLOW,w:1.4,coords:[[-34.6080,-58.4208],[-34.6180,-58.4215],[-34.6280,-58.4220],[-34.6380,-58.4225]]},
-  { name:'Av. Carabobo',color:AVENIDA_YELLOW,w:1.4,coords:[[-34.6050,-58.4428],[-34.6150,-58.4425],[-34.6280,-58.4422],[-34.6380,-58.4420]]},
-  { name:'Av. Gaona',color:AVENIDA_YELLOW,w:1.4,coords:[[-34.6150,-58.4820],[-34.6200,-58.4720],[-34.6250,-58.4620],[-34.6300,-58.4520]]},
-  { name:'Av. Triunvirato',color:AVENIDA_YELLOW,w:1.4,coords:[[-34.5630,-58.4980],[-34.5635,-58.4780],[-34.5640,-58.4580],[-34.5645,-58.4420]]},
-  { name:'Av. Forest',color:AVENIDA_YELLOW,w:1.4,coords:[[-34.5850,-58.4620],[-34.5920,-58.4570],[-34.5990,-58.4520],[-34.6040,-58.4490]]},
-  { name:'Av. La Plata',color:AVENIDA_YELLOW,w:1.4,coords:[[-34.6230,-58.4290],[-34.6290,-58.4260],[-34.6360,-58.4230],[-34.6420,-58.4200]]},
-  { name:'Av. Warnes',color:AVENIDA_YELLOW,w:1.4,coords:[[-34.5810,-58.4620],[-34.5815,-58.4500],[-34.5820,-58.4380],[-34.5825,-58.4280]]},
-  { name:'Av. Directorio',color:AVENIDA_YELLOW,w:1.4,coords:[[-34.6380,-58.4850],[-34.6395,-58.4620],[-34.6405,-58.4400],[-34.6410,-58.4220]]},
-];
-
-// v14: opacidad nunca cae a 0 — antes desaparecían por completo al alejar zoom
-const avenidaLayers = [];
-AVENIDAS.forEach(av => {
-  const pl = L.polyline(av.coords, { color:av.color, weight:av.w, opacity:0.55, smoothFactor:1, interactive:false }).addTo(map);
-  avenidaLayers.push(pl);
-});
-
-// Recién ahora existen map + avenidaLayers — es seguro aplicar el estilo inicial
+// Aplicar el estilo de mapa inicial
 applyMapStyle(MAP_STYLE_CURRENT);
 
 map.on('zoomend', () => {
-  const z = map.getZoom();
-  avenidaLayers.forEach(l => l.setStyle({ opacity: z >= 13 ? 0.55 : 0.25 }));
   refreshMarkerLabels();
   // Actualizar radios de todos los circleMarkers cuando cambia el zoom
   scheduleRender();

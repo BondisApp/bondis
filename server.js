@@ -500,6 +500,10 @@ function loadOSMRoutes() {
   }
 }
 
+let gtfsRetryCount = 0;
+const GTFS_MAX_RETRIES     = 5;
+const GTFS_RETRY_DELAY_MS  = 30000;
+
 async function loadGTFS() {
   const clientId     = process.env.GCBA_CLIENT_ID;
   const clientSecret = process.env.GCBA_CLIENT_SECRET;
@@ -567,19 +571,43 @@ async function loadGTFS() {
     console.log('[GTFS] Indexando shapes por parada...');
     buildStopShapesIndex();
     gtfsLoaded = true;
+    gtfsRetryCount = 0;
     console.log(`[GTFS] ✅ ${stopsStore.size} paradas listas`);
   } catch(err) {
     console.error('[GTFS] Error:', err.message);
+    // Sin esto, una descarga que falla o queda a medias dejaba paradas/ETA
+    // rotos para siempre en ese deploy — nada volvía a intentar cargar el
+    // GTFS hasta la recarga programada del día siguiente (4am).
+    const zipPath = path.join(__dirname, 'gtfs.zip');
+    if (fs.existsSync(zipPath)) fs.unlink(zipPath, () => {});
+    if (gtfsRetryCount < GTFS_MAX_RETRIES) {
+      gtfsRetryCount++;
+      console.log(`[GTFS] Reintentando en ${GTFS_RETRY_DELAY_MS/1000}s (intento ${gtfsRetryCount}/${GTFS_MAX_RETRIES})...`);
+      setTimeout(loadGTFS, GTFS_RETRY_DELAY_MS);
+    } else {
+      console.error('[GTFS] Se agotaron los reintentos — paradas y ETA quedarán sin datos hasta la recarga diaria (4am).');
+    }
   }
 }
 
-function downloadFile(url, dest) {
+// Sin timeout, una descarga de GCBA que se cuelga (nada raro con su API)
+// dejaba la promesa esperando para siempre y gtfsLoaded en false por el
+// resto de la vida del container — sin timeout no hay forma de reintentar.
+function downloadFile(url, dest, timeoutMs = 240000) {
   return new Promise((resolve, reject) => {
     const file = fs.createWriteStream(dest);
-    https.get(url, res => {
+    const req = https.get(url, res => {
+      if (res.statusCode !== 200) {
+        file.close();
+        fs.unlink(dest, () => {});
+        reject(new Error(`GTFS respondió HTTP ${res.statusCode}`));
+        return;
+      }
       res.pipe(file);
       file.on('finish', () => { file.close(); resolve(); });
-    }).on('error', err => { fs.unlink(dest, () => {}); reject(err); });
+    });
+    req.on('error', err => { fs.unlink(dest, () => {}); reject(err); });
+    req.setTimeout(timeoutMs, () => req.destroy(new Error('Timeout descargando GTFS')));
   });
 }
 
