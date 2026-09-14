@@ -738,8 +738,13 @@ app.get('/eta', (req, res) => {
   const stop = stopsStore.get(stop_id);
   if (!stop) return res.status(404).json({ error: 'Parada no encontrada' });
 
+  // Confirmado en vivo: la API de GCBA suele publicar posiciones con 4-5
+  // minutos (270-300s) de retraso real, no instantáneo. Con el límite en
+  // 180s (3 min), CASI SIEMPRE se descartaban todos los colectivos y el
+  // ETA quedaba vacío — no por falta de colectivos cercanos, sino porque
+  // el límite era más estricto que el propio retraso normal de GCBA.
   const now    = Date.now() / 1000;
-  const active = fusedStore.filter(v => now - v.timestamp < 180);
+  const active = fusedStore.filter(v => now - v.timestamp < 420);
   const ETA_RADIUS = 2000;
   const byLine = new Map();
 
