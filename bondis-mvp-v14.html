@@ -523,7 +523,8 @@ body{font-family:'Nunito',sans-serif;background:var(--bg);color:var(--text);heig
 #geo-prompt{position:fixed;inset:0;background:rgba(10,10,14,.92);z-index:2000;display:flex;align-items:center;justify-content:center;backdrop-filter:blur(4px)}
 #geo-prompt.hide{display:none}
 .geo-card{background:var(--surface);border:1px solid var(--border);border-top:3px solid var(--yellow);padding:32px;max-width:360px;text-align:center}
-.geo-icon{font-size:40px;margin-bottom:16px}
+.geo-icon{margin-bottom:16px;display:flex;justify-content:center}
+.geo-icon svg{filter:drop-shadow(0 4px 10px rgba(245,200,0,.35))}
 .geo-title{font-family:'Bebas Neue',sans-serif;font-size:28px;letter-spacing:3px;color:var(--yellow);margin-bottom:8px}
 .geo-text{font-size:10px;color:var(--text-dim);line-height:1.7;letter-spacing:1px;margin-bottom:24px}
 .geo-btn{display:block;width:100%;padding:12px;background:var(--yellow);color:#000;font-family:'Bebas Neue',sans-serif;font-size:16px;letter-spacing:3px;border:none;cursor:pointer;margin-bottom:8px;transition:opacity .2s}
@@ -540,7 +541,12 @@ body{font-family:'Nunito',sans-serif;background:var(--bg);color:var(--text);heig
 <!-- GEOLOCATION PROMPT -->
 <div id="geo-prompt">
   <div class="geo-card">
-    <div class="geo-icon">📍</div>
+    <div class="geo-icon">
+      <svg width="48" height="48" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+        <path d="M12 2C7.86 2 4.5 5.36 4.5 9.5c0 5.71 6.16 11.55 7.06 12.38a.6.6 0 0 0 .88 0c.9-.83 7.06-6.67 7.06-12.38C19.5 5.36 16.14 2 12 2z" fill="var(--yellow)"/>
+        <circle cx="12" cy="9.5" r="3.4" fill="#14141a"/>
+      </svg>
+    </div>
     <div class="geo-title">¿Dónde estás?</div>
     <div class="geo-text">BONDIS necesita tu ubicación para mostrarte las paradas y colectivos más cercanos en tiempo real.</div>
     <button class="geo-btn" onclick="requestLocation()">ACTIVAR MI UBICACIÓN</button>
