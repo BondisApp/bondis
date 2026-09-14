@@ -136,7 +136,10 @@ async function fetchGCBA() {
     const url = `https://apitransporte.buenosaires.gob.ar/colectivos/vehiclePositionsSimple` +
                 `?client_id=${clientId}&client_secret=${clientSecret}`;
 
-    const response = await axios.get(url, { timeout: 10000 });
+    // La API de GCBA a veces tarda ~15-20s en responder (lo confirmamos en vivo);
+    // con 10s de límite, esos picos de lentitud tiraban el fetch entero y el
+    // mapa se quedaba sin colectivos hasta el siguiente ciclo de 30s.
+    const response = await axios.get(url, { timeout: 25000 });
     const entities = Array.isArray(response.data) ? response.data : [];
 
     // Resetear contador de diagnóstico en cada fetch para loguear siempre los primeros 10
