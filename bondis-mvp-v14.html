@@ -1363,7 +1363,11 @@ function updateStats(shown) {
   const speeds = shown.filter(v=>(v.posicion?.velocidad??0)>0).map(v=>v.posicion.velocidad);
   const avg    = speeds.length ? Math.round(speeds.reduce((a,b)=>a+b,0)/speeds.length) : 0;
   const now    = Date.now()/1000;
-  const offline = vehicles.filter(v=>now-v.timestamp>120).length;
+  // v14 fix: la API de GCBA suele publicar posiciones con 4-5 minutos (270-300s)
+  // de retraso real, no instantáneo. Con 120s de límite, esto marcaba a CASI
+  // TODOS los colectivos como "sin señal" aunque estuvieran perfectamente bien
+  // — solo reflejaban el retraso normal de GCBA, no una falla real.
+  const offline = vehicles.filter(v=>now-v.timestamp>420).length;
   document.getElementById('hdr-active').textContent  = shown.length;
   document.getElementById('hdr-lines').textContent   = new Set(shown.map(pubOf)).size;
   document.getElementById('hdr-offline').textContent = offline;

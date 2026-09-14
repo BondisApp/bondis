@@ -276,7 +276,12 @@ function fuseData() {
   gcbaStore.forEach((gcba, id) => {
     if (gpsStore.has(id)) return;
     const age   = now - gcba.timestamp;
-    const trust = Math.max(20, 65 - (age / 120) * 30);
+    // v14 fix: la API de GCBA suele tardar 4-5 min (270-300s) en publicar
+    // posiciones. Con 120s de referencia, la confiabilidad de casi todos los
+    // colectivos quedaba siempre pisada en el mínimo (20%) aunque estuvieran
+    // perfectamente al día para lo normal de GCBA. Ahora decae mas gradual,
+    // llegando al mínimo recién cerca de los 400s.
+    const trust = Math.max(20, 65 - (age / 400) * 45);
 
     result.push({
       id,
