@@ -942,10 +942,14 @@ const map = L.map('map', {
 // sí tiene cobertura completa de CABA/AMBA. El problema real de CartoDB
 // ("API KEY REQUIRED" ocasional) se resuelve con una clave gratuita propia
 // (pendiente: agregar CARTO_API_KEY cuando Miguel la consiga).
+// v14: clave gratuita de CARTO Basemaps (restringida al dominio de BONDIS
+// en el panel de CARTO — aunque quede visible en el código, no le sirve
+// a nadie que la copie desde otro sitio).
+const CARTO_KEY = 'cb1_3l62_1_d332fdf0eb376868fa17a5f6';
 const MAP_STYLES = {
-  dark:          { url:'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',     attribution:'© CartoDB © OpenStreetMap', theme:'dark'  },
-  dark_nolabels: { url:'https://{s}.basemaps.cartocdn.com/dark_nolabels/{z}/{x}/{y}{r}.png', attribution:'© CartoDB © OpenStreetMap', theme:'dark'  },
-  light:         { url:'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png',     attribution:'© CartoDB © OpenStreetMap', theme:'light' }
+  dark:          { url:`https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png?key=${CARTO_KEY}`,     attribution:'© CartoDB © OpenStreetMap', theme:'dark'  },
+  dark_nolabels: { url:`https://{s}.basemaps.cartocdn.com/dark_nolabels/{z}/{x}/{y}{r}.png?key=${CARTO_KEY}`, attribution:'© CartoDB © OpenStreetMap', theme:'dark'  },
+  light:         { url:`https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png?key=${CARTO_KEY}`,    attribution:'© CartoDB © OpenStreetMap', theme:'light' }
 };
 const MAP_STYLE_ORDER = ['dark', 'dark_nolabels', 'light'];
 const MAP_STYLE = 'dark'; // estilo por defecto la primera vez que alguien abre la app
