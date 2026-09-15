@@ -462,6 +462,13 @@ let stopsStore     = new Map();
 let stopTimesStore = new Map();
 let gtfsLoaded     = false;
 
+// stopsReady se activa apenas hay paradas disponibles para /stops — con el
+// snapshot embebido en el repo, eso es al instante, sin esperar a que
+// termine de bajar el GTFS completo (~200MB, puede tardar minutos).
+// gtfsLoaded sigue reflejando el GTFS real (con shapes/rutas para ETA y
+// snap-to-road), no solo las paradas.
+let stopsReady     = false;
+
 const shapeStore   = new Map();
 const tripShapeMap = new Map();
 const stopShapes   = new Map();
@@ -480,6 +487,41 @@ const SHAPE_STOP_RADIUS_M = 40;
 // El archivo osm-routes.json se genera con:
 //   node scripts/fetch-osm-routes.js
 // ══════════════════════════════════════════════════════
+
+// ══════════════════════════════════════════════════════
+// SNAPSHOT DE PARADAS — respaldo embebido en el repo
+//
+// La descarga del GTFS completo de GCBA (~200MB, con shapes y todo) puede
+// tardar varios minutos, y hasta que termina /stops no tiene nada para
+// mostrar. Este snapshot es una copia liviana (solo id/nombre/ubicación/
+// líneas de cada parada, sin shapes) que se carga al instante al arrancar,
+// para que "paradas cercanas" funcione desde el segundo cero. En cuanto
+// termina la descarga real, parseStopLine() pisa estas mismas entradas
+// con datos frescos — no hace falta borrar nada a mano.
+//
+// Se regenera con:
+//   node server.js --export-stops-snapshot
+// (requiere tener el GTFS ya bajado localmente, o credenciales de GCBA)
+// ══════════════════════════════════════════════════════
+const STOPS_SNAPSHOT_PATH = path.join(__dirname, 'data', 'stops-snapshot.json');
+
+function loadStopsSnapshot() {
+  if (!fs.existsSync(STOPS_SNAPSHOT_PATH)) {
+    console.log('[Snapshot] data/stops-snapshot.json no encontrado — sin respaldo instantáneo de paradas');
+    return;
+  }
+  try {
+    const data = JSON.parse(fs.readFileSync(STOPS_SNAPSHOT_PATH, 'utf8'));
+    (data.stops || []).forEach(s => {
+      stopsStore.set(s.stop_id, { stop_id: s.stop_id, name: s.name, lat: s.lat, lng: s.lng, lines: new Set(s.lines) });
+    });
+    stopsReady = true;
+    console.log(`[Snapshot] ${stopsStore.size} paradas listas al instante (generado ${data.generatedAt})`);
+  } catch (err) {
+    console.error('[Snapshot] Error leyendo stops-snapshot.json:', err.message);
+  }
+}
+
 function loadOSMRoutes() {
   const osmFile = path.join(__dirname, 'osm-routes.json');
   if (!fs.existsSync(osmFile)) {
@@ -576,6 +618,7 @@ async function loadGTFS() {
     console.log('[GTFS] Indexando shapes por parada...');
     buildStopShapesIndex();
     gtfsLoaded = true;
+    stopsReady = true;
     gtfsRetryCount = 0;
     console.log(`[GTFS] ✅ ${stopsStore.size} paradas listas`);
   } catch(err) {
@@ -734,8 +777,23 @@ function parseStopLine(line, headers) {
   });
 }
 
+// Busca, para una parada sin líneas asociadas todavía, cuáles pasan por
+// ahí cruzando sus shapes (GTFS + OSM) contra los shapes de cada línea.
+// La usan tanto /stops como el generador del snapshot embebido.
+function resolveLinesForStop(stop) {
+  if (stop.lines.length > 0 || !stopShapes.has(stop.stop_id)) return stop.lines;
+  const shapesHere = stopShapes.get(stop.stop_id);
+  const found = [];
+  routeShapes.forEach((shapeIds, route) => {
+    for (const sid of shapeIds) {
+      if (shapesHere.has(sid)) { found.push(route); break; }
+    }
+  });
+  return [...new Set(found)].sort();
+}
+
 app.get('/stops', (req, res) => {
-  if (!gtfsLoaded) return res.json({ ok: false, error: 'GTFS no cargado aún', stops: [] });
+  if (!stopsReady) return res.json({ ok: false, error: 'Paradas no disponibles aún', stops: [] });
   const lat    = parseFloat(req.query.lat);
   const lng    = parseFloat(req.query.lng);
   const radius = parseFloat(req.query.radius) || 400;
@@ -754,17 +812,7 @@ app.get('/stops', (req, res) => {
     }
   });
 
-  nearby.forEach(stop => {
-    if (stop.lines.length === 0 && stopShapes.has(stop.stop_id)) {
-      const shapesHere = stopShapes.get(stop.stop_id);
-      routeShapes.forEach((shapeIds, route) => {
-        for (const sid of shapeIds) {
-          if (shapesHere.has(sid)) { stop.lines.push(route); break; }
-        }
-      });
-      stop.lines = [...new Set(stop.lines)].sort();
-    }
-  });
+  nearby.forEach(stop => { stop.lines = resolveLinesForStop(stop); });
 
   nearby.sort((a,b) => a.distance - b.distance);
   res.json({ ok: true, total: nearby.length, stops: nearby.slice(0, 20) });
@@ -1005,28 +1053,59 @@ cron.schedule('0 4 * * *', () => {
   console.log('[GTFS] Recarga diaria...');
   stopsStore.clear(); stopTimesStore.clear(); tripRouteMap.clear(); routeIdToName.clear();
   tripShapeMap.clear(); shapeStore.clear(); stopShapes.clear();
-  routeShapes.clear(); gtfsLoaded = false;
+  routeShapes.clear(); gtfsLoaded = false; stopsReady = false;
+  loadStopsSnapshot(); // paradas no quedan sin datos mientras se recarga el GTFS real
   loadGTFS();
 });
 
 // ══════════════════════════════════════════════════════
-// ARRANQUE
+// MODO EXPORTACIÓN — genera data/stops-snapshot.json y termina
+//   node server.js --export-stops-snapshot
+// No levanta servidor ni cron: solo espera a que loadGTFS() termine de
+// bajar/parsear el GTFS real, resuelve las líneas de cada parada y
+// guarda la copia liviana que se commitea al repo.
 // ══════════════════════════════════════════════════════
-const PORT = process.env.PORT || 3000;
-server.listen(PORT, () => {
-  console.log('');
-  console.log('🚌  BONDIS Backend v10 arrancado');
-  console.log(`    REST  →  http://localhost:${PORT}`);
-  console.log(`    WS    →  ws://localhost:${PORT}`);
-  console.log('');
-  console.log('    Endpoints:');
-  console.log(`    GET /vehicles   GET /lines   GET /stats   GET /health`);
-  console.log(`    GET /stops      GET /eta     POST /gps`);
-  console.log('');
-  console.log('    [DIAG] Logging primeros 10 vehículos GCBA activo.');
-  console.log('    [DIAG] Para desactivar: agregar GCBA_LOG_VEHICLES=false en .env');
-  console.log('');
+if (process.argv.includes('--export-stops-snapshot')) {
+  (async () => {
+    console.log('[Snapshot] Cargando GTFS completo para generar el snapshot...');
+    await loadGTFS();
+    if (!gtfsLoaded) {
+      console.error('[Snapshot] El GTFS no cargó — no se puede generar el snapshot.');
+      process.exit(1);
+    }
+    const stops = [...stopsStore.values()].map(stop => ({
+      stop_id: stop.stop_id, name: stop.name, lat: stop.lat, lng: stop.lng,
+      lines: resolveLinesForStop({ ...stop, lines: [...stop.lines] })
+    }));
+    const dataDir = path.join(__dirname, 'data');
+    if (!fs.existsSync(dataDir)) fs.mkdirSync(dataDir);
+    fs.writeFileSync(STOPS_SNAPSHOT_PATH, JSON.stringify({
+      generatedAt: new Date().toISOString(), stops
+    }));
+    console.log(`[Snapshot] ✅ ${stops.length} paradas guardadas en ${STOPS_SNAPSHOT_PATH}`);
+    process.exit(0);
+  })();
+} else {
+  // ══════════════════════════════════════════════════════
+  // ARRANQUE
+  // ══════════════════════════════════════════════════════
+  loadStopsSnapshot();
+  const PORT = process.env.PORT || 3000;
+  server.listen(PORT, () => {
+    console.log('');
+    console.log('🚌  BONDIS Backend v10 arrancado');
+    console.log(`    REST  →  http://localhost:${PORT}`);
+    console.log(`    WS    →  ws://localhost:${PORT}`);
+    console.log('');
+    console.log('    Endpoints:');
+    console.log(`    GET /vehicles   GET /lines   GET /stats   GET /health`);
+    console.log(`    GET /stops      GET /eta     POST /gps`);
+    console.log('');
+    console.log('    [DIAG] Logging primeros 10 vehículos GCBA activo.');
+    console.log('    [DIAG] Para desactivar: agregar GCBA_LOG_VEHICLES=false en .env');
+    console.log('');
 
-  fetchGCBA();
-  loadGTFS();
-});
+    fetchGCBA();
+    loadGTFS();
+  });
+}
