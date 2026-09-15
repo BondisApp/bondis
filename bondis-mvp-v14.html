@@ -45,7 +45,7 @@
 body{font-family:'Nunito',sans-serif;background:var(--bg);color:var(--text);height:100vh;overflow:hidden;display:flex;flex-direction:column}
 
 /* HEADER */
-#header{display:flex;align-items:center;justify-content:space-between;padding:0 20px;height:50px;background:var(--surface);border-bottom:1px solid var(--border);flex-shrink:0;z-index:1000}
+#header{display:flex;align-items:center;justify-content:space-between;padding:8px 20px;min-height:50px;background:var(--surface);border-bottom:1px solid var(--border);flex-shrink:0;z-index:1000}
 .logo{font-family:'Bebas Neue',sans-serif;font-size:26px;letter-spacing:4px;color:var(--yellow);line-height:1}
 .logo span{font-size:10px;letter-spacing:2px;color:var(--text);font-weight:700;display:block;font-family:'Nunito',sans-serif;margin-top:-1px}
 .header-center{display:flex;align-items:center;gap:16px}
@@ -165,13 +165,13 @@ body{font-family:'Nunito',sans-serif;background:var(--bg);color:var(--text);heig
 .eta-list::-webkit-scrollbar-thumb{background:var(--border)}
 /* v14: fila de ETA simplificada — solo línea + tiempo, sin distancia,
    velocidad ni fuente (eso ya se ve si tocás el colectivo en el mapa) */
-.eta-row{display:flex;align-items:center;gap:11px;padding:9px 16px;border-bottom:1px solid var(--border);transition:background .12s}
+.eta-row{display:flex;align-items:center;gap:8px;padding:6px 14px;border-bottom:1px solid var(--border);transition:background .12s}
 .eta-row:hover{background:var(--bg2)}
-.eta-line-badge{width:38px;height:28px;display:flex;align-items:center;justify-content:center;border-radius:8px;flex-shrink:0}
-.eta-badge-num{font-family:'Bebas Neue',sans-serif;font-size:13px;line-height:1;letter-spacing:.5px}
-.eta-info{flex:1;font-size:10px;color:var(--text-dim)}
-.eta-time{font-family:'Bebas Neue',sans-serif;font-size:19px;line-height:1;flex-shrink:0}
-.eta-time span{font-size:10px;color:var(--text-dim);font-family:'Nunito',sans-serif;margin-left:2px}
+.eta-line-badge{width:32px;height:24px;display:flex;align-items:center;justify-content:center;border-radius:7px;flex-shrink:0}
+.eta-badge-num{font-family:'Bebas Neue',sans-serif;font-size:12px;line-height:1;letter-spacing:.5px}
+.eta-info{flex:0 1 auto;font-size:9px;color:var(--text-dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:110px}
+.eta-time{font-family:'Bebas Neue',sans-serif;font-size:16px;line-height:1;flex-shrink:0}
+.eta-time span{font-size:9px;color:var(--text-dim);font-family:'Nunito',sans-serif;margin-left:2px}
 .eta-footer{padding:6px 14px;font-size:7px;letter-spacing:2px;color:var(--text-dim);border-top:1px solid var(--border);flex-shrink:0;text-transform:uppercase}
 
 /* REFRESH BAR */
@@ -385,6 +385,7 @@ body{font-family:'Nunito',sans-serif;background:var(--bg);color:var(--text);heig
   .header-center { gap: 8px; }
   .stat-pill { padding: 2px 7px; }
   #btn-share span { display: none; }
+  .data-source { display: none; } /* detalle técnico, no aporta de un vistazo */
 
 }
 
@@ -597,7 +598,7 @@ body{font-family:'Nunito',sans-serif;background:var(--bg);color:var(--text);heig
       <div class="eta-header">
         <div>
           <div class="eta-stop-name" id="eta-stop-name">—</div>
-          <div class="eta-stop-dist" id="eta-stop-dist">—</div>
+          <div class="eta-stop-dist"><span id="eta-stop-dist">—</span> <span id="eta-updated"></span></div>
         </div>
         <div class="eta-close" onclick="closeETA()">✕</div>
       </div>
@@ -1384,8 +1385,9 @@ async function fetchETA(stop_id) {
     }).join('');
 
     const now = new Date();
-    document.getElementById('eta-footer').textContent =
-      `${now.getHours()}:${String(now.getMinutes()).padStart(2,'0')} · ${data.etas.length} líneas cercanas`;
+    const hhmm = `${now.getHours()}:${String(now.getMinutes()).padStart(2,'0')}`;
+    document.getElementById('eta-updated').textContent = `· ${hhmm}`;
+    document.getElementById('eta-footer').textContent = `${data.etas.length} líneas cercanas`;
   } catch(e) {
     document.getElementById('eta-list').innerHTML = '<div class="eta-loading">Error al conectar</div>';
   }
