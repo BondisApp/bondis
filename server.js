@@ -512,7 +512,12 @@ async function loadGTFS() {
     return;
   }
   try {
-    const gtfsDir = path.join(__dirname, 'gtfs');
+    // Si GTFS_DATA_DIR apunta a un Volume de Railway (disco persistente), los
+    // archivos sobreviven a reinicios y redeploys — sin esto, Railway borra
+    // todo en cada arranque y hay que volver a descargar los ~200MB de GCBA
+    // cada vez (~10 min en los que paradas/ETA quedan sin datos).
+    const dataDir = process.env.GTFS_DATA_DIR || __dirname;
+    const gtfsDir = path.join(dataDir, 'gtfs');
     const routesFile = path.join(gtfsDir, 'routes.txt');
 
     // Si ya existe la carpeta gtfs con routes.txt, usar los archivos locales directamente
@@ -521,7 +526,7 @@ async function loadGTFS() {
     } else {
       console.log('[GTFS] Descargando feed de paradas...');
       const url     = `https://apitransporte.buenosaires.gob.ar/colectivos/feed-gtfs?client_id=${clientId}&client_secret=${clientSecret}`;
-      const zipPath = path.join(__dirname, 'gtfs.zip');
+      const zipPath = path.join(dataDir, 'gtfs.zip');
       await downloadFile(url, zipPath);
       if (!fs.existsSync(gtfsDir)) fs.mkdirSync(gtfsDir);
       // Antes se usaba "tar" (Linux) o PowerShell (Windows) para descomprimir —
@@ -578,7 +583,7 @@ async function loadGTFS() {
     // Sin esto, una descarga que falla o queda a medias dejaba paradas/ETA
     // rotos para siempre en ese deploy — nada volvía a intentar cargar el
     // GTFS hasta la recarga programada del día siguiente (4am).
-    const zipPath = path.join(__dirname, 'gtfs.zip');
+    const zipPath = path.join(process.env.GTFS_DATA_DIR || __dirname, 'gtfs.zip');
     if (fs.existsSync(zipPath)) fs.unlink(zipPath, () => {});
     if (gtfsRetryCount < GTFS_MAX_RETRIES) {
       gtfsRetryCount++;
