@@ -148,6 +148,9 @@ body{font-family:'Nunito',sans-serif;background:var(--bg);color:var(--text);heig
 .detail-row:last-child{border-bottom:none}
 .dr-label{font-size:8px;letter-spacing:2px;text-transform:uppercase;color:var(--text-dim)}
 .dr-value{font-size:9px;color:var(--text);font-weight:700}
+#btn-share-trip{width:100%;display:flex;align-items:center;justify-content:center;gap:7px;padding:9px 14px;background:var(--bg2);border:1px solid var(--border);border-radius:10px;cursor:pointer;color:var(--text-dim);font-family:'Nunito',sans-serif;font-size:10px;font-weight:700;letter-spacing:1px;transition:all .2s;margin-top:12px}
+#btn-share-trip:hover{border-color:var(--yellow);color:var(--yellow)}
+#btn-share-trip.copied{border-color:var(--green);color:var(--green)}
 .dr-value.green{color:var(--green)}
 .dr-value.yellow{color:var(--yellow)}
 
@@ -591,6 +594,14 @@ body{font-family:'Nunito',sans-serif;background:var(--bg);color:var(--text);heig
       <div class="detail-row"><span class="dr-label">Velocidad</span><span class="dr-value yellow" id="d-speed">—</span></div>
       <div class="detail-row"><span class="dr-label">Estado</span><span class="dr-value green" id="d-status">—</span></div>
       <div class="detail-row"><span class="dr-label">Última actualiz.</span><span class="dr-value" id="d-ts">—</span></div>
+      <button id="btn-share-trip" onclick="shareVehicle()">
+        <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round">
+          <circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/>
+          <line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/>
+          <line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/>
+        </svg>
+        <span>Compartir viaje</span>
+      </button>
     </div>
 
     <!-- ETA PANEL -->
@@ -658,6 +669,7 @@ let markers      = {};
 let trailLayers  = {}; // v10: trail de posiciones por vehículo
 let stopMarkers  = {};
 let selectedId   = null;
+let trackingVehicleId = null; // si viene de un link "compartir viaje", el mapa lo sigue solo
 let activeFilter = 'ALL'; // contiene el número público (ej: "140"), no el id_ruta interno
 let stopsVisible = false;
 let userMarker   = null;
@@ -1011,6 +1023,7 @@ function connectWS() {
       scheduleRender();
       buildChips();
       animateRefreshBar();
+      refreshOpenVehicleDetail();
     }
   };
 
@@ -1222,11 +1235,10 @@ function updateStats(shown) {
 }
 
 // ── DETALLE VEHÍCULO — v10: número público + ramal ─
-function selectVehicle(id) {
-  selectedId = String(id);
-  const v = vehicles.find(v=>String(v.id)===selectedId);
-  if (!v) return;
-
+// Separado del movimiento del mapa para poder refrescar el panel solo
+// (sin reencuadrar) cuando llega data nueva por WebSocket — ver "Compartir
+// viaje" mas abajo, que además hace seguir el colectivo en el mapa.
+function renderVehicleDetail(v) {
   const pub    = pubOf(v);
   const branch = v.branchCode   || '';
   const color  = lineColor(pub);
@@ -1243,7 +1255,14 @@ function selectVehicle(id) {
   document.getElementById('d-speed').textContent  = spd > 0 ? `${spd} km/h` : 'Detenido';
   document.getElementById('d-status').textContent = v.current_status==='IN_TRANSIT_TO'?'En tránsito':'En parada';
   document.getElementById('d-ts').textContent     = secsAgo < 5 ? 'Ahora mismo' : `Hace ${secsAgo}s`;
+}
 
+function selectVehicle(id) {
+  selectedId = String(id);
+  const v = vehicles.find(v=>String(v.id)===selectedId);
+  if (!v) return;
+
+  renderVehicleDetail(v);
   document.getElementById('detail').classList.add('show');
   document.getElementById('eta-panel').classList.remove('show');
 
@@ -1256,8 +1275,24 @@ function selectVehicle(id) {
   updateMap();
 }
 
+// Mantiene el panel abierto al día con cada tanda nueva de datos (cada
+// ~30s) sin reencuadrar el mapa — salvo que sea un link de "compartir
+// viaje", en cuyo caso además sigue al colectivo suavemente.
+function refreshOpenVehicleDetail() {
+  if (!selectedId || !document.getElementById('detail').classList.contains('show')) return;
+  const v = vehicles.find(v=>String(v.id)===selectedId);
+  if (!v) return;
+  renderVehicleDetail(v);
+  if (trackingVehicleId === selectedId) {
+    const vLat = v.posicion?.latitud ?? v.lat;
+    const vLng = v.posicion?.longitud ?? v.lng;
+    map.panTo([vLat, vLng], { animate: true, duration: 1 });
+  }
+}
+
 function closeDetail() {
   selectedId = null;
+  trackingVehicleId = null;
   document.getElementById('detail').classList.remove('show');
   updateMap();
 }
@@ -1456,6 +1491,38 @@ function showToast(msg) {
   setTimeout(() => t.classList.remove('show'), 2500);
 }
 
+// ══════════════════════════════════════════════════════════
+// COMPARTIR VIAJE — como el "compartir viaje" de Uber: comparte la
+// posición EN VIVO del colectivo en el que estás (dato oficial, el
+// mismo que ve cualquiera en BONDIS), no tu ubicación personal. Quien
+// abre el link ve ese colectivo moverse solo, sin acción de tu parte.
+// ══════════════════════════════════════════════════════════
+function shareVehicle() {
+  if (!selectedId) return;
+  const v = vehicles.find(v=>String(v.id)===selectedId);
+  if (!v) return;
+  const pub = pubOf(v);
+
+  const params = new URLSearchParams({ vehicle: selectedId });
+  const urlParams = new URLSearchParams(window.location.search);
+  if (urlParams.get('server')) params.set('server', urlParams.get('server'));
+  const shareUrl = `${window.location.origin}${window.location.pathname}?${params}`;
+  const text = `Seguí mi colectivo (línea ${pub}) en vivo en BONDIS`;
+
+  if (navigator.share) {
+    navigator.share({ title: 'BONDIS — Colectivos en tiempo real', text, url: shareUrl }).catch(() => {});
+  } else {
+    navigator.clipboard.writeText(shareUrl).then(() => {
+      showToast('✓ Link del viaje copiado al portapapeles');
+      const btn = document.getElementById('btn-share-trip');
+      btn.classList.add('copied');
+      setTimeout(() => btn.classList.remove('copied'), 2500);
+    }).catch(() => {
+      prompt('Copiá este link:', shareUrl);
+    });
+  }
+}
+
 // ── RESTAURAR ESTADO DESDE URL ─────────────
 // Si alguien compartió un link, restaurar la vista al cargar
 (function restoreFromUrl() {
@@ -1464,6 +1531,25 @@ function showToast(msg) {
   const lng    = parseFloat(params.get('lng'));
   const zoom   = parseInt(params.get('z'));
   const linea  = params.get('linea');
+  const vehicleId = params.get('vehicle');
+
+  if (vehicleId) {
+    // Los vehículos llegan async por WebSocket — reintentar hasta
+    // encontrarlo (o hasta 20s: si para entonces no apareció, es que ese
+    // colectivo ya no está en línea y no insistimos más).
+    document.getElementById('geo-prompt').classList.add('hide');
+    let attempts = 0;
+    const tryTrackVehicle = () => {
+      attempts++;
+      if (vehicles.some(v => String(v.id) === vehicleId)) {
+        selectVehicle(vehicleId);
+        trackingVehicleId = vehicleId;
+      } else if (attempts < 20) {
+        setTimeout(tryTrackVehicle, 1000);
+      }
+    };
+    setTimeout(tryTrackVehicle, 1000);
+  }
 
   if (!isNaN(lat) && !isNaN(lng)) {
     // Esperar a que el mapa esté listo
